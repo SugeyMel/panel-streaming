@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+:root {
+  --background: #070b12;
+  --nav: #0b111c;
+  --surface: #111827;
+  --hover: #172033;
+  --border: #253047;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --foreground: #f8fafc;
+  --accent-violet: #8b5cf6;
+  --accent-sky: #38bdf8;
+  --accent-cyan: #06b6d4;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.28);
+}
+
+select option {
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+.ui-field {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--nav);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  outline: none;
+}
+
+.ui-field::placeholder {
+  color: var(--muted);
+}
+
+.ui-field:focus {
+  border-color: color-mix(in srgb, var(--accent-sky) 55%, var(--border));
+}
+
+.cta-gradient {
+  background: linear-gradient(135deg, #8b5cf6, #3b82f6, #06b6d4);
+}
+
+.sticky-app-cta {
+  position: sticky;
+  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  padding-top: 0.75rem;
+  padding-bottom: 0.35rem;
+  background: linear-gradient(180deg, transparent, #070b12 28%);
+}
+
+@media (min-width: 1024px) {
+  .sticky-app-cta {
+    bottom: 0;
+  }
+}
