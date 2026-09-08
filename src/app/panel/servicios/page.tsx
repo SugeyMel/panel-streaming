@@ -1,13 +1,14 @@
 import { ServicesManager } from "@/components/services/ServicesManager";
-import { loadCustomers, loadPlatforms, loadProducts, loadServices, panelScope } from "@/lib/data/queries";
+import { loadCustomers, loadMessageTemplates, loadPlatforms, loadProducts, loadServices, panelScope } from "@/lib/data/queries";
 
 export default async function SellerServicesPage() {
   const { sellerId } = await panelScope();
-  const [services, platforms, products, customers] = await Promise.all([
+  const [services, platforms, products, customers, plantillas] = await Promise.all([
     loadServices({ sellerId }),
     loadPlatforms(),
     loadProducts(sellerId),
     loadCustomers(sellerId),
+    loadMessageTemplates(sellerId),
   ]);
   return (
     <ServicesManager
@@ -16,6 +17,7 @@ export default async function SellerServicesPage() {
       products={products}
       customers={customers}
       showInternal
+      plantillas={plantillas}
     />
   );
 }

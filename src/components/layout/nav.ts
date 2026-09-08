@@ -1,6 +1,5 @@
 import type { ComponentType, SVGProps } from "react";
 import {
-  DashboardIcon,
   FinanceIcon,
   HistoryIcon,
   HomeIcon,
@@ -14,6 +13,7 @@ import {
   ReportIcon,
   SalesIcon,
   SettingsIcon,
+  ShoppingBagIcon,
   SupportIcon,
   UsersIcon,
 } from "@/components/icons";
@@ -26,9 +26,18 @@ export type NavItem = {
   icon: IconType;
 };
 
+export const sellerPrimaryNav: NavItem[] = [
+  { href: "/panel", label: "Inicio", icon: HomeIcon },
+  { href: "/panel/productos", label: "Tienda", icon: ShoppingBagIcon },
+  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
+  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
+];
+
 export const sellerNav: NavItem[] = [
   { href: "/panel", label: "Inicio", icon: HomeIcon },
   { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
+  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
   { href: "/panel/servicios", label: "Servicios", icon: PlatformsIcon },
   { href: "/panel/productos", label: "Productos", icon: ProductsIcon },
   { href: "/panel/mayorista", label: "Mayorista", icon: InventoryIcon },
@@ -45,17 +54,15 @@ export const sellerNav: NavItem[] = [
 ];
 
 export const adminNav: NavItem[] = [
-  { href: "/admin", label: "Dashboard", icon: DashboardIcon },
+  { href: "/admin", label: "Inicio", icon: HomeIcon },
   { href: "/admin/vendedores", label: "Vendedores", icon: UsersIcon },
   { href: "/admin/clientes", label: "Clientes", icon: UsersIcon },
   { href: "/admin/pedidos", label: "Pedidos", icon: OrdersIcon },
-  { href: "/admin/servicios", label: "Servicios", icon: PlatformsIcon },
-  { href: "/admin/plataformas", label: "Plataformas", icon: ProductsIcon },
+  { href: "/admin/ventas", label: "Ventas", icon: SalesIcon },
+  { href: "/admin/mayorista", label: "Mayorista", icon: InventoryIcon },
   { href: "/admin/inventario", label: "Inventario", icon: InventoryIcon },
-  { href: "/admin/proveedores", label: "Proveedores", icon: InventoryIcon },
   { href: "/admin/correos", label: "Correos", icon: MailIcon },
   { href: "/admin/solicitudes", label: "Solicitudes", icon: SupportIcon },
-  { href: "/admin/finanzas", label: "Finanzas", icon: FinanceIcon },
   { href: "/admin/reportes", label: "Reportes", icon: ReportIcon },
   { href: "/admin/historial", label: "Historial", icon: HistoryIcon },
   { href: "/admin/configuracion", label: "Configuración", icon: SettingsIcon },
@@ -63,10 +70,10 @@ export const adminNav: NavItem[] = [
 
 export const customerNav: NavItem[] = [
   { href: "/cliente", label: "Inicio", icon: HomeIcon },
-  { href: "/cliente/comprar", label: "Comprar", icon: ProductsIcon },
+  { href: "/cliente/comprar", label: "Tienda", icon: ProductsIcon },
   { href: "/cliente/servicios", label: "Mis servicios", icon: PlatformsIcon },
   { href: "/cliente/pedidos", label: "Mis pedidos", icon: OrdersIcon },
   { href: "/cliente/acceso", label: "Centro de acceso", icon: KeyIcon },
-  { href: "/cliente/soporte", label: "Soporte", icon: SupportIcon },
+  { href: "/cliente/soporte", label: "Ayuda", icon: SupportIcon },
   { href: "/cliente/cuenta", label: "Mi cuenta", icon: SettingsIcon },
 ];

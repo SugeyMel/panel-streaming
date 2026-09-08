@@ -9,20 +9,25 @@ import type {
   SupportStatus,
 } from "./types";
 
-const currencyFormatter = new Intl.NumberFormat("es-PE", {
-  style: "currency",
-  currency: "PEN",
-  minimumFractionDigits: 2,
-});
+const LIMA_OFFSET_MS = 5 * 60 * 60 * 1000;
 
-const dateFormatter = new Intl.DateTimeFormat("es-PE", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-});
+function limaParts(date: Date) {
+  const shifted = new Date(date.getTime() - LIMA_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+  };
+}
 
 export function formatCurrency(amount: number) {
-  return currencyFormatter.format(amount);
+  const n = Number.isFinite(amount) ? amount : 0;
+  const negative = n < 0;
+  const [int, frac] = Math.abs(n).toFixed(2).split(".");
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative ? "-" : ""}S/ ${grouped}.${frac}`;
 }
 
 function parseCalendarDate(isoDate: string) {
@@ -35,7 +40,36 @@ function parseCalendarDate(isoDate: string) {
 }
 
 export function formatDate(isoDate: string) {
-  return dateFormatter.format(parseCalendarDate(isoDate));
+  const fromIso = isoToDayMonthYear(isoDate);
+  if (fromIso) return fromIso;
+  const parsed = parseCalendarDate(isoDate);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const { year, month, day } = limaParts(parsed);
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+}
+
+export function isoToDayMonthYear(isoDate: string) {
+  const day = isoDate.slice(0, 10);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!match) return "";
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+export function dayMonthYearToIso(value: string) {
+  const match = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(value.trim());
+  if (!match) return "";
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function formatDateTime(isoDate: string) {
+  const parsed = new Date(isoDate);
+  if (Number.isNaN(parsed.getTime())) return formatDate(isoDate);
+  const { year, month, day, hour, minute } = limaParts(parsed);
+  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year} ${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 export function daysRemaining(endDate: string, now = new Date()) {

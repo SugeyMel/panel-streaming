@@ -37,7 +37,7 @@ export function PlatformCatalog({ platforms = mockPlatforms }: { platforms?: Pla
           No encontramos plataformas con ese nombre.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div className="grid grid-cols-3 gap-2 md:grid-cols-4 md:gap-3 xl:grid-cols-6">
           {filtered.map((platform) => {
             const prices = products
               .filter((product) => product.platformId === platform.id)

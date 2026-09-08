@@ -13,7 +13,11 @@ export default async function PublicLayout({
 
   return (
     <div className="flex min-h-full flex-col">
-      <Navbar loggedIn={loggedIn} portalHref={portalPath(session.role)} />
+      <Navbar
+        loggedIn={loggedIn}
+        portalHref={portalPath(session.role)}
+        userName={session.name}
+      />
       <div className="flex-1">{children}</div>
       <Footer />
     </div>

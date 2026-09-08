@@ -43,6 +43,28 @@ export function Badge({
   );
 }
 
+export type HealthStatus = "activo" | "por_vencer" | "vencido";
+
+const healthLabel: Record<HealthStatus, string> = {
+  activo: "Activo",
+  por_vencer: "Por vencer",
+  vencido: "Vencido",
+};
+
+const healthClass: Record<HealthStatus, string> = {
+  activo: "bg-[#16A34A] text-white",
+  por_vencer: "bg-[#FBBF24] text-[#1C1917]",
+  vencido: "bg-[#DC2626] text-white",
+};
+
+export function HealthStatusBadge({ status }: { status: HealthStatus }) {
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${healthClass[status]}`}>
+      {healthLabel[status]}
+    </span>
+  );
+}
+
 const orderTone: Record<OrderStatus, Tone> = {
   pendiente_pago: "warning",
   pago_enviado: "info",

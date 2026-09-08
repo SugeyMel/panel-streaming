@@ -1,13 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { placeCheckoutAction } from "@/app/actions/business";
+import { SellerPayDetails } from "@/components/payments/SellerPayDetails";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PlatformName } from "@/components/ui/PlatformLogo";
+import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
+import { UploadIcon } from "@/components/icons";
 import { formatCurrency } from "@/lib/format";
-import type { PaymentMethod, Product, Seller } from "@/lib/types";
+import type { Product, Seller, SellerPaymentMethod } from "@/lib/types";
 import type { Platform } from "@/lib/types";
 
 export function CheckoutFlow({
@@ -15,6 +18,7 @@ export function CheckoutFlow({
   product,
   platform,
   relatedProducts = [],
+  methods,
   customerName = "",
   customerWhatsapp = "",
   lockCustomer = false,
@@ -23,32 +27,27 @@ export function CheckoutFlow({
   product: Product;
   platform?: Platform;
   relatedProducts?: Product[];
+  methods: SellerPaymentMethod[];
   customerName?: string;
   customerWhatsapp?: string;
   lockCustomer?: boolean;
 }) {
   const params = useSearchParams();
   const router = useRouter();
-  const [method, setMethod] = useState<PaymentMethod>("yape");
+  const activeMethods = methods.filter((item) => item.isActive !== false);
+  const [paymentMethodId, setPaymentMethodId] = useState(activeMethods[0]?.id ?? "");
   const [preview, setPreview] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-
-  const payment = useMemo(
-    () =>
-      method === "yape"
-        ? { holder: seller.yapeHolder, number: seller.yapeNumber }
-        : { holder: seller.plinHolder, number: seller.plinNumber },
-    [method, seller],
-  );
+  const pay = activeMethods.find((item) => item.id === paymentMethodId);
 
   if (params.get("producto") && params.get("producto") !== product.id) {
     return <p className="p-8 text-slate-400">El producto no pertenece a esta tienda.</p>;
   }
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-6 px-4 py-10 lg:grid-cols-2 sm:px-6">
+    <main className={`mx-auto grid max-w-5xl gap-6 lg:grid-cols-2 ${lockCustomer ? "px-0 py-0 sm:px-0" : "px-4 py-10 sm:px-6"}`}>
       <Card className="space-y-3 p-6 text-sm text-slate-300">
         <h1 className="text-2xl font-semibold text-white">Checkout</h1>
         <p className="flex items-center gap-2">
@@ -60,7 +59,11 @@ export function CheckoutFlow({
             {relatedProducts.filter((item) => item.active).map((item) => (
               <Button
                 key={item.id}
-                href={`/tienda/${seller.slug}/checkout?producto=${item.id}`}
+                href={
+                  lockCustomer
+                    ? `/cliente/checkout?producto=${item.id}`
+                    : `/tienda/${seller.slug}/checkout?producto=${item.id}`
+                }
                 variant={item.id === product.id ? "primary" : "secondary"}
                 className="px-3 py-2 text-xs"
               >
@@ -80,12 +83,16 @@ export function CheckoutFlow({
           className="space-y-4"
           onSubmit={async (event) => {
             event.preventDefault();
+            if (!pay) {
+              setError("Elige un medio de pago.");
+              return;
+            }
             setPending(true);
             setError(null);
             const form = new FormData(event.currentTarget);
             form.set("sellerSlug", seller.slug);
             form.set("productId", product.id);
-            form.set("method", method);
+            form.set("method", pay.kind === "plin" ? "plin" : "yape");
             if (file) form.set("voucher", file);
             const result = await placeCheckoutAction(form);
             setPending(false);
@@ -112,13 +119,9 @@ export function CheckoutFlow({
           </label>
           <label className="block text-sm">
             WhatsApp
-            <input
-              name="whatsapp"
-              required
-              defaultValue={customerWhatsapp}
-              readOnly={lockCustomer}
-              className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5"
-            />
+            <div className="mt-2">
+              <WhatsAppInput name="whatsapp" defaultValue={customerWhatsapp} required readOnly={lockCustomer} />
+            </div>
           </label>
           {lockCustomer ? (
             <p className="text-xs text-slate-500">Este pedido queda en tu cuenta. Lo verás en Mis pedidos.</p>
@@ -127,39 +130,59 @@ export function CheckoutFlow({
             Correo (opcional)
             <input name="email" type="email" className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5" />
           </label>
-          <div className="flex gap-2">
-            <Button type="button" variant={method === "yape" ? "primary" : "secondary"} onClick={() => setMethod("yape")}>
-              Yape
-            </Button>
-            <Button type="button" variant={method === "plin" ? "primary" : "secondary"} onClick={() => setMethod("plin")}>
-              Plin
-            </Button>
+          <div>
+            <p className="mb-2 text-sm">Elige un medio de pago</p>
+            <SellerPayDetails methods={methods} selectedId={paymentMethodId} onSelect={setPaymentMethodId} />
           </div>
-          <p className="text-sm text-slate-300">Titular: {payment.holder}</p>
-          <p className="text-sm text-slate-300">Número: {payment.number}</p>
-          <div className="flex h-36 items-center justify-center rounded-2xl border border-dashed border-white/12 bg-white/4 text-xs text-slate-500">
-            QR {method.toUpperCase()} configurado por el vendedor
+          <div>
+            <p className="mb-2 text-sm text-[#F1F5F9]">Adjuntar comprobante</p>
+            <label className="flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#253047] bg-[#111827] px-4 py-6 text-center">
+              <UploadIcon className="h-10 w-10 text-[#8B5CF6]" />
+              <p className="mt-3 text-sm font-semibold text-[#F8FAFC]">
+                {file ? "Cambiar comprobante" : "Adjuntar comprobante"}
+              </p>
+              <p className="mt-1 text-xs text-[#94A3B8]">PNG, JPG o JPEG · máx. 5 MB</p>
+              <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#253047] px-4 py-2 text-sm text-[#F8FAFC]">
+                <UploadIcon className="h-4 w-4" />
+                Seleccionar archivo
+              </span>
+              <input
+                type="file"
+                accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                className="sr-only"
+                onChange={(event) => {
+                  const next = event.target.files?.[0];
+                  if (!next) return;
+                  setFile(next);
+                  setPreview(URL.createObjectURL(next));
+                }}
+              />
+            </label>
+            {file ? (
+              <div className="mt-3 flex items-center gap-3 rounded-2xl border border-[#253047] bg-[#111827] p-3">
+                {preview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview} alt="Vista previa del comprobante" className="h-12 w-12 rounded-lg object-cover" />
+                ) : null}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-[#F8FAFC]">{file.name}</p>
+                  <p className="text-xs text-[#94A3B8]">{(file.size / 1024).toFixed(0)} KB</p>
+                </div>
+                <button
+                  type="button"
+                  className="text-sm text-[#94A3B8]"
+                  onClick={() => {
+                    setFile(null);
+                    setPreview(null);
+                  }}
+                >
+                  Quitar
+                </button>
+              </div>
+            ) : null}
           </div>
-          <label className="block text-sm">
-            Adjuntar comprobante (PNG, JPG, JPEG · máx. 5 MB)
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-              className="mt-2 block w-full text-sm"
-              onChange={(event) => {
-                const next = event.target.files?.[0];
-                if (!next) return;
-                setFile(next);
-                setPreview(URL.createObjectURL(next));
-              }}
-            />
-          </label>
-          {preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={preview} alt="Vista previa del comprobante" className="max-h-40 rounded-xl object-contain" />
-          ) : null}
           {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-          <Button type="submit" className="w-full" disabled={pending}>
+          <Button type="submit" className="w-full" disabled={pending || !pay}>
             {pending ? "Registrando..." : "Ya pagué"}
           </Button>
         </form>

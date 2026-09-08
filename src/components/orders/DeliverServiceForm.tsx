@@ -5,10 +5,10 @@ import { useMemo, useState } from "react";
 import { deliverOrderAction } from "@/app/actions/business";
 import { Button } from "@/components/ui/Button";
 import { PlatformName } from "@/components/ui/PlatformLogo";
-import { deliveryWhatsAppMessage, waLink } from "@/lib/whatsapp";
+import { deliveryWhatsAppMessage, waLink, type PlantillasWhatsapp } from "@/lib/whatsapp";
 import type { StreamingAccount } from "@/lib/types";
 
-const PROFILE_OPTIONS = ["1", "2", "3", "4", "5"];
+const PROFILE_OPTIONS = ["x", "1", "2", "3", "4", "5"];
 
 function splitProfile(value?: string) {
   const raw = (value ?? "").trim();
@@ -31,6 +31,7 @@ export function DeliverServiceForm({
   initialProfile,
   initialNote,
   initialAccountId,
+  plantillas,
 }: {
   orderId: string;
   customerName: string;
@@ -44,6 +45,7 @@ export function DeliverServiceForm({
   initialProfile?: string;
   initialNote?: string;
   initialAccountId?: string;
+  plantillas?: PlantillasWhatsapp;
 }) {
   const router = useRouter();
   const parsed = splitProfile(initialProfile);
@@ -52,7 +54,9 @@ export function DeliverServiceForm({
   const [email, setEmail] = useState(initialEmail || first?.email || "");
   const [accountPassword, setAccountPassword] = useState(first?.password || "");
   const [pin, setPin] = useState(initialPassword ?? "");
-  const [profile, setProfile] = useState(parsed.slot || suggestedProfile(first));
+  const [profile, setProfile] = useState(
+    parsed.slot || ((initialProfile ?? "").trim() ? "x" : suggestedProfile(first)),
+  );
   const [profileName, setProfileName] = useState(parsed.name || customerName);
   const [note, setNote] = useState(initialNote ?? "");
   const [pending, setPending] = useState(false);
@@ -67,7 +71,10 @@ export function DeliverServiceForm({
     setProfile(suggestedProfile(next));
   }
 
-  const profileLabel = [profile, profileName.trim()].filter(Boolean).join(" · ");
+  const profileLabel =
+    profile && profile !== "x"
+      ? [profile, profileName.trim()].filter(Boolean).join(" · ")
+      : profileName.trim();
 
   const autoNote = useMemo(() => {
     const parts = [
@@ -91,9 +98,10 @@ export function DeliverServiceForm({
           pin,
           profile: profileLabel,
           note: note || autoNote,
+          plantillas,
         }),
       ),
-    [accountPassword, autoNote, customerName, customerWhatsapp, email, note, pin, platformName, productName, profileLabel],
+    [accountPassword, autoNote, customerName, customerWhatsapp, email, note, pin, plantillas, platformName, productName, profileLabel],
   );
 
   return (
@@ -161,18 +169,28 @@ export function DeliverServiceForm({
       <div>
         <p className="text-xs text-slate-400">Perfil del cliente</p>
         <div className="mt-2 flex flex-wrap gap-2">
-          {PROFILE_OPTIONS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setProfile(item)}
-              className={`rounded-xl border px-3 py-2 text-sm ${
-                profile === item ? "border-cyan-400 bg-cyan-400/10 text-white" : "border-white/10 text-slate-300"
-              }`}
-            >
-              {item}
-            </button>
-          ))}
+          {PROFILE_OPTIONS.map((item) => {
+            const selected = profile === item;
+            const isX = item === "x";
+            return (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setProfile(item)}
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  isX
+                    ? selected
+                      ? "border-[#EF4444] bg-[#EF4444]/20 font-semibold text-[#F87171]"
+                      : "border-[#EF4444]/50 font-semibold text-[#EF4444]"
+                    : selected
+                      ? "border-cyan-400 bg-cyan-400/10 text-white"
+                      : "border-white/10 text-slate-300"
+                }`}
+              >
+                {item.toUpperCase()}
+              </button>
+            );
+          })}
         </div>
         <input type="hidden" name="accessProfile" value={profileLabel} />
       </div>

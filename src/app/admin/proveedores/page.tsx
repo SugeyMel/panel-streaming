@@ -1,4 +1,4 @@
-import { SuppliersManager } from "@/components/admin/SuppliersManager";
+import { MayoristaBoard } from "@/components/admin/MayoristaBoard";
 import { loadPlatforms, loadSupplierProducts, loadSuppliers } from "@/lib/data/queries";
 
 export default async function AdminSuppliersPage() {
@@ -8,10 +8,6 @@ export default async function AdminSuppliersPage() {
     loadPlatforms(),
   ]);
   return (
-    <SuppliersManager
-      suppliers={suppliers as never}
-      products={products as never}
-      platforms={platforms}
-    />
+    <MayoristaBoard tab="proveedores" products={products} platforms={platforms} suppliers={suppliers} />
   );
 }

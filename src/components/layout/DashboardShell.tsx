@@ -3,11 +3,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppBrand } from "@/components/brand/Logo";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { adminNav, customerNav, sellerNav } from "@/components/layout/nav";
-import { BellIcon } from "@/components/icons";
+import { AlertsBell, SellerBell, type HeaderAlert, type SellerBellAlert } from "@/components/layout/SellerBell";
+import { SellerUserMenu } from "@/components/layout/SellerUserMenu";
+import { adminNav, customerNav, sellerNav, sellerPrimaryNav } from "@/components/layout/nav";
+import { BellIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
 import { signOutAction } from "@/app/actions/business";
 
 const homes = {
@@ -18,33 +20,53 @@ const homes = {
 
 const bellHref = {
   admin: "/admin/solicitudes",
-  seller: "/panel/comprobantes",
+  seller: "/panel/pedidos",
   customer: "/cliente/pedidos",
 };
 
-const sellerQuick = [
-  { href: "/panel/ventas", label: "Nueva venta" },
-  { href: "/panel/clientes", label: "Nuevo cliente" },
-  { href: "/panel/servicios", label: "Nuevo servicio" },
-  { href: "/panel/finanzas", label: "Registrar gasto" },
+const sellerMoreItems: {
+  label: string;
+  href?: string;
+  hint?: string;
+  disabled?: boolean;
+}[] = [
+  { label: "Inventario", href: "/panel/inventario" },
+  { label: "Correos", href: "/panel/correos" },
+  { label: "Medios de pago", href: "/panel/configuracion" },
+  { label: "Finanzas", href: "/panel/finanzas" },
+  { label: "Reportes", disabled: true, hint: "Sin sección propia aún" },
+  { label: "Configuración", href: "/panel/configuracion" },
+  { label: "Soporte", href: "/panel/soporte" },
 ];
+
+const adminMoreItems: { label: string; href: string }[] = [{ label: "Finanzas", href: "/admin/finanzas" }];
 
 export function DashboardShell({
   title,
   role,
   variant,
   userName = "",
+  pendingAlerts = [],
+  customerAlerts = [],
+  brandLogoUrl,
+  brandTitle,
   children,
 }: {
   title: string;
   role: string;
   variant: "seller" | "admin" | "customer";
   userName?: string;
+  pendingCount?: number;
+  pendingAlerts?: SellerBellAlert[];
+  customerAlerts?: HeaderAlert[];
+  brandLogoUrl?: string | null;
+  brandTitle?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
   const [more, setMore] = useState(false);
-  const [plus, setPlus] = useState(false);
+  const [desktopMore, setDesktopMore] = useState(false);
+  const desktopMoreRef = useRef<HTMLDivElement>(null);
   const items =
     variant === "admin" ? adminNav : variant === "customer" ? customerNav : sellerNav;
   const home = homes[variant];
@@ -52,13 +74,30 @@ export function DashboardShell({
   const customerSubflow =
     variant === "customer" &&
     (pathname.includes("/cliente/servicios/") || pathname.includes("/cliente/renovar"));
+  const sellerApp = variant === "seller";
+  const adminApp = variant === "admin";
+  const sellerMoreActive =
+    sellerApp &&
+    !sellerPrimaryNav.some((item) =>
+      item.href === home ? pathname === item.href : pathname.startsWith(item.href),
+    );
+  const adminFinanceActive = adminApp && pathname.startsWith("/admin/finanzas");
+
+  useEffect(() => {
+    function onPointer(event: MouseEvent) {
+      if (!desktopMoreRef.current?.contains(event.target as Node)) setDesktopMore(false);
+    }
+    document.addEventListener("mousedown", onPointer);
+    return () => document.removeEventListener("mousedown", onPointer);
+  }, []);
 
   return (
-    <div className="min-h-screen bg-[#070B12] text-[#F8FAFC]">
-      <div className="lg:grid lg:grid-cols-[272px_1fr]">
-        <aside className="hidden min-h-screen flex-col border-r border-[#253047] bg-[#0B111C] lg:flex">
-          <div className="border-b border-[#253047] bg-gradient-to-r from-[#8B5CF6]/20 via-transparent to-[#06B6D4]/10 p-5">
-            <AppBrand href={home} role={role} size="sidebar" />
+    <div className={`min-h-screen text-[#F8FAFC] ${variant === "admin" ? "bg-[#0B0F1A]" : "bg-[#070B12]"}`}>
+      <div className={sellerApp ? "" : "lg:grid lg:grid-cols-[272px_1fr]"}>
+        {sellerApp ? null : (
+        <aside className="hidden min-h-screen flex-col border-r border-[#253047] bg-[#0B0F1A] lg:flex">
+          <div className="border-b border-[#253047] p-5">
+            <AppBrand href={home} role={role} size="sidebar" logoSrc={brandLogoUrl} title={brandTitle} />
           </div>
           <nav className="flex-1 space-y-1 p-3">
             {items.map((item) => {
@@ -73,7 +112,9 @@ export function DashboardShell({
                   href={item.href}
                   className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
                     active
-                      ? "bg-gradient-to-r from-[#8B5CF6]/30 to-[#06B6D4]/15 text-[#F8FAFC] shadow-[inset_3px_0_0_#8B5CF6]"
+                      ? adminApp
+                        ? "bg-[#7C3AED] text-white"
+                        : "bg-gradient-to-r from-[#8B5CF6]/30 to-[#06B6D4]/15 text-[#F8FAFC] shadow-[inset_3px_0_0_#8B5CF6]"
                       : "text-[#94A3B8] hover:bg-[#172033] hover:text-[#F8FAFC]"
                   }`}
                 >
@@ -83,7 +124,18 @@ export function DashboardShell({
               );
             })}
           </nav>
-          <form action={signOutAction} className="p-4">
+          {adminApp ? (
+            <div className="mx-3 mb-3 rounded-2xl border border-[#7C3AED]/30 bg-gradient-to-br from-[#2E1064]/80 to-[#111827] p-4">
+              <div className="mb-2 grid h-9 w-9 place-items-center rounded-xl bg-[#7C3AED] text-white">
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                  <path d="M4 16 6 7l5 5 3-7 6 9v3H4z" />
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-white">Panel Streaming Admin</p>
+              <p className="mt-1 text-xs text-[#94A3B8]">Tu negocio, en todas partes.</p>
+            </div>
+          ) : null}
+          <form action={signOutAction} className="p-4 pt-0">
             <button
               type="submit"
               className="w-full rounded-xl border border-[#253047] px-3 py-2.5 text-left text-sm text-[#94A3B8] hover:bg-[#172033] hover:text-white"
@@ -92,85 +144,255 @@ export function DashboardShell({
             </button>
           </form>
         </aside>
+        )}
 
         <div className="min-h-screen">
           <header
-            className={`sticky top-0 z-20 border-b border-[#253047] bg-[#070B12]/92 backdrop-blur-xl ${
-              customerSubflow ? "hidden lg:block" : ""
-            }`}
+            className={`sticky top-0 z-20 border-b border-[#253047] backdrop-blur-xl ${
+              variant === "admin" ? "bg-[#0B0F1A]/92" : "bg-[#070B12]/92"
+            } ${customerSubflow ? "hidden lg:block" : ""}`}
           >
-            <div className="hidden h-1 bg-gradient-to-r from-[#8B5CF6] via-[#3B82F6] to-[#06B6D4] lg:block" />
-            <div className="flex items-center justify-between px-4 py-3 sm:px-6">
-              <div className="flex min-w-0 items-center gap-3 lg:hidden">
-                <AppBrand compact href={home} />
-              </div>
-              <div className="hidden lg:block">
-                <h1 className="text-lg font-semibold">{title}</h1>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link
-                  href={bellHref[variant]}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#253047] bg-[#111827] text-[#94A3B8]"
-                  aria-label="Avisos"
-                >
-                  <BellIcon className="h-5 w-5" />
-                </Link>
-                <span
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#06B6D4] text-sm font-semibold text-white"
-                  title={userName || role}
-                >
-                  {initial}
+            <div className={adminApp ? "hidden" : "hidden h-1 bg-gradient-to-r from-[#8B5CF6] via-[#3B82F6] to-[#06B6D4] lg:block"} />
+            <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 lg:px-8 lg:py-3">
+              <div className={`flex min-w-0 items-center gap-6 ${sellerApp ? "" : "lg:hidden"}`}>
+                <span className="inline-flex min-w-0 items-center gap-2">
+                  <AppBrand compact href={home} logoSrc={brandLogoUrl} title={brandTitle} />
+                  {variant === "admin" ? (
+                    <span className="shrink-0 rounded-full bg-[#1D4ED8]/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#93C5FD]">
+                      Admin
+                    </span>
+                  ) : null}
                 </span>
-                <form action={signOutAction} className="hidden sm:block lg:block">
-                  <button
-                    type="submit"
-                    className="hidden rounded-xl border border-[#253047] bg-[#0B111C] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#172033] lg:inline-flex"
-                  >
-                    Cerrar sesión
-                  </button>
-                </form>
+                {sellerApp ? (
+                  <nav className="hidden min-w-0 items-center gap-1 lg:flex">
+                    {sellerPrimaryNav.map((item) => {
+                      const active =
+                        item.href === home ? pathname === item.href : pathname.startsWith(item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
+                            active ? "bg-[#172033] text-[#F8FAFC]" : "text-[#94A3B8] hover:text-[#F8FAFC]"
+                          }`}
+                        >
+                          {item.label}
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                ) : null}
+              </div>
+              {sellerApp ? null : adminApp ? (
+                <div className="hidden min-w-0 flex-1 lg:block">
+                  <label className="relative mx-auto block max-w-xl">
+                    <span className="sr-only">Buscar en el panel</span>
+                    <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+                    <input
+                      type="search"
+                      placeholder="Buscar en el panel..."
+                      className="h-10 w-full rounded-xl border border-[#253047] bg-[#111827] pr-3 pl-10 text-sm text-[#F1F5F9] outline-none placeholder:text-[#64748B]"
+                    />
+                  </label>
+                </div>
+              ) : (
+                <div className="hidden lg:block">
+                  <h1 className="text-lg font-semibold">{title}</h1>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                {sellerApp || adminApp ? (
+                  <div ref={desktopMoreRef} className="relative hidden lg:block">
+                    <button
+                      type="button"
+                      className={`inline-flex h-10 items-center gap-1 rounded-full border px-3 text-sm font-medium ${
+                        (sellerApp && (sellerMoreActive || desktopMore)) ||
+                        (adminApp && (adminFinanceActive || desktopMore))
+                          ? "border-[#8B5CF6] bg-[#172033] text-[#F8FAFC]"
+                          : "border-[#253047] bg-[#111827] text-[#F8FAFC]"
+                      }`}
+                      aria-expanded={desktopMore}
+                      onClick={() => setDesktopMore((value) => !value)}
+                    >
+                      Más
+                      <ChevronDownIcon className="h-4 w-4 text-[#94A3B8]" />
+                    </button>
+                    {desktopMore ? (
+                      <div className="absolute right-0 z-40 mt-2 w-64 overflow-hidden rounded-2xl border border-[#253047] bg-[#111827] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                        {(sellerApp ? sellerMoreItems : adminMoreItems).map((item) =>
+                          "disabled" in item && (item.disabled || !item.href) ? (
+                            <div key={item.label} className="px-3 py-2.5 opacity-50">
+                              <p className="text-sm text-[#94A3B8]">{item.label}</p>
+                              {"hint" in item && item.hint ? <p className="text-xs text-[#64748B]">{item.hint}</p> : null}
+                            </div>
+                          ) : (
+                            <Link
+                              key={item.label}
+                              href={item.href!}
+                              onClick={() => setDesktopMore(false)}
+                              className="block px-3 py-2.5 text-sm text-[#F8FAFC] hover:bg-[#172033]"
+                            >
+                              {item.label}
+                            </Link>
+                          ),
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+                {sellerApp ? (
+                  <>
+                    <Link
+                      href="/panel/productos"
+                      title="Productos en oferta"
+                      aria-label="Productos en oferta"
+                      className="grid shrink-0 place-items-center hover:brightness-[1.06] max-lg:h-[30px] max-lg:min-h-[30px] max-lg:w-[30px] max-lg:min-w-[30px] lg:h-[36px] lg:min-h-[36px] lg:w-[36px] lg:min-w-[36px]"
+                      style={{
+                        display: "grid",
+                        placeItems: "center",
+                        flexShrink: 0,
+                        aspectRatio: "1",
+                        borderRadius: 9999,
+                        background: "rgba(251,146,60,0.12)",
+                        border: "1px solid rgba(251,146,60,0.35)",
+                      }}
+                    >
+                      <span className="text-[14px] lg:text-[16px]" style={{ lineHeight: 1 }}>
+                        🔥
+                      </span>
+                    </Link>
+                    <SellerBell alerts={pendingAlerts} />
+                  </>
+                ) : variant === "customer" ? (
+                  <AlertsBell
+                    alerts={customerAlerts}
+                    footerHref="/cliente/pedidos"
+                    footerLabel="Ver mis pedidos"
+                    empty="No hay servicios entregados recientes."
+                    wiggle
+                  />
+                ) : (
+                  <>
+                    {adminApp ? (
+                      <a
+                        href="#buscar"
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-[#253047] bg-[#111827] text-[#94A3B8] lg:hidden"
+                        aria-label="Buscar"
+                      >
+                        <SearchIcon className="h-5 w-5" />
+                      </a>
+                    ) : null}
+                    <Link
+                      href={bellHref[variant]}
+                      className="relative flex h-10 w-10 items-center justify-center rounded-full border border-[#253047] bg-[#111827] text-[#94A3B8]"
+                      aria-label="Avisos"
+                    >
+                      <BellIcon className="h-5 w-5" />
+                    </Link>
+                  </>
+                )}
+                {variant === "seller" ? (
+                  <SellerUserMenu name={userName} />
+                ) : adminApp ? (
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#6366F1] text-sm font-semibold text-white"
+                      title={userName || role}
+                    >
+                      {initial}
+                    </span>
+                    <span className="hidden leading-tight lg:block">
+                      <span className="block text-sm font-semibold text-white">{userName || "Admin"}</span>
+                      <span className="block text-[11px] text-[#94A3B8]">Administrador</span>
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <span
+                      className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#06B6D4] text-sm font-semibold text-white"
+                      title={userName || role}
+                    >
+                      {initial}
+                    </span>
+                    <form action={signOutAction} className="hidden lg:block">
+                      <button
+                        type="submit"
+                        className="rounded-xl border border-[#253047] bg-[#0B111C] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#172033]"
+                      >
+                        Cerrar sesión
+                      </button>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
           </header>
-          <main className="px-4 py-5 pb-28 sm:px-6 lg:py-6 lg:pb-8">{children}</main>
+          <main
+            className={
+              adminApp
+                ? "px-3 py-3 pb-24 sm:px-4 lg:px-6 lg:py-3 lg:pb-4"
+                : "px-4 py-5 pb-28 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
+            }
+          >
+            {children}
+          </main>
         </div>
       </div>
-      <BottomNav
-        variant={variant}
-        onMore={() => setMore(true)}
-        onPlus={variant === "seller" ? () => setPlus(true) : undefined}
-      />
+      <BottomNav variant={variant} onMore={() => setMore(true)} moreOpen={more} />
       {more ? (
         <Sheet title="Más" onClose={() => setMore(false)}>
-          {items.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMore(false)}
-              className="flex min-h-12 items-center rounded-xl px-3 text-sm text-[#F8FAFC] hover:bg-[#172033]"
-            >
-              {item.label}
-            </Link>
-          ))}
-          <form action={signOutAction}>
-            <button type="submit" className="mt-2 w-full rounded-xl px-3 py-3 text-left text-sm text-[#EF4444]">
-              Cerrar sesión
-            </button>
-          </form>
-        </Sheet>
-      ) : null}
-      {plus ? (
-        <Sheet title="Acciones rápidas" onClose={() => setPlus(false)}>
-          {sellerQuick.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setPlus(false)}
-              className="flex min-h-12 items-center rounded-xl px-3 text-sm text-[#F8FAFC] hover:bg-[#172033]"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {variant === "seller" ? (
+            sellerMoreItems.map((item) =>
+              item.disabled || !item.href ? (
+                <div
+                  key={item.label}
+                  className="flex min-h-12 flex-col justify-center rounded-xl px-3 py-2 opacity-50"
+                >
+                  <span className="text-sm text-[#94A3B8]">{item.label}</span>
+                  {item.hint ? <span className="text-xs text-[#64748B]">{item.hint}</span> : null}
+                </div>
+              ) : (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  onClick={() => setMore(false)}
+                  className="flex min-h-12 items-center rounded-xl px-3 text-sm text-[#F8FAFC] hover:bg-[#172033]"
+                >
+                  {item.label}
+                </Link>
+              ),
+            )
+          ) : (
+            <>
+              {adminApp
+                ? adminMoreItems.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMore(false)}
+                      className="flex min-h-12 items-center rounded-xl px-3 text-sm text-[#F8FAFC] hover:bg-[#172033]"
+                    >
+                      {item.label}
+                    </Link>
+                  ))
+                : null}
+              {items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMore(false)}
+                  className="flex min-h-12 items-center rounded-xl px-3 text-sm text-[#F8FAFC] hover:bg-[#172033]"
+                >
+                  {item.label}
+                </Link>
+              ))}
+              <form action={signOutAction}>
+                <button type="submit" className="mt-2 w-full rounded-xl px-3 py-3 text-left text-sm text-[#EF4444]">
+                  Cerrar sesión
+                </button>
+              </form>
+            </>
+          )}
         </Sheet>
       ) : null}
     </div>

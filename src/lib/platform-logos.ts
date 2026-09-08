@@ -137,6 +137,14 @@ export function platformDisplayName(platform: PlatformLogoInput | null | undefin
   return platform?.name || platform?.slug || "";
 }
 
+export function orderPlatformLabel(
+  order: { platformId?: string; platformName?: string },
+  platforms: PlatformLogoInput[],
+) {
+  const platform = platforms.find((item) => typeof item !== "string" && item.id === order.platformId);
+  return platformDisplayName(platform ?? order.platformName) || "Servicio";
+}
+
 export function platformLogoSrc(platform: PlatformLogoInput | null | undefined): string | null {
   if (platform && typeof platform !== "string" && platform.logoUrl) return platform.logoUrl;
   const key = resolvePlatformLogoKey(platform);

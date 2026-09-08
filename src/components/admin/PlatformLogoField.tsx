@@ -37,6 +37,10 @@ export function PlatformLogoField({ platform }: { platform?: Platform | null }) 
   return (
     <div className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
       <p className="text-xs text-slate-400">Logo / imagen de la plataforma</p>
+      <p className="text-[11px] leading-snug text-slate-500">
+        Medida: <span className="text-slate-300">512×512 px</span> (cuadrado). PNG transparente, sin marco. JPG o WEBP también. Máx. 8 MB.
+        En la tienda se muestra al 55% del panel (88 px de alto en celular, 120 px en escritorio).
+      </p>
       {preview ? (
         <div className="space-y-2">
           <p className="text-xs text-slate-500">Logo actual</p>
@@ -50,7 +54,7 @@ export function PlatformLogoField({ platform }: { platform?: Platform | null }) 
           <PlatformLogo platform={platform} size={64} />
         </div>
       ) : (
-        <p className="text-xs text-slate-500">Aún no hay imagen. Preferible PNG transparente.</p>
+        <p className="text-xs text-slate-500">Aún no hay imagen.</p>
       )}
       <input
         ref={inputRef}

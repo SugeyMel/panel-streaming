@@ -43,7 +43,7 @@ export function buildInventoryRows(
 ): InventoryAccountRow[] {
   return accounts.map((account) => {
     const max = Math.min(8, Math.max(1, account.maxProfiles || 5));
-    const isFullAccount = max <= 1 || /completa/i.test(account.label);
+    const isFullAccount = account.saleKind === "full" || max <= 1 || /completa/i.test(account.label);
     const related = servicesOnAccount(account, services);
     const slots: ProfileSlot[] = Array.from({ length: max }, (_, index) => ({
       index: index + 1,
@@ -93,6 +93,21 @@ export function slotTone(service: Subscription | null) {
   if (status === "vencido") return "expired" as const;
   if (status === "proximo_a_vencer") return "expiring" as const;
   return "active" as const;
+}
+
+export function inventoryEndDate(row: InventoryAccountRow) {
+  return row.account.expiresAt || row.nearestEnd;
+}
+
+export function inventoryHealth(endDate: string | null) {
+  if (!endDate) {
+    return { days: null as number | null, tone: "none" as const, label: "Sin fecha" };
+  }
+  const days = daysRemaining(endDate);
+  if (days > 3) return { days, tone: "ok" as const, label: "Vigente" };
+  if (days >= 2) return { days, tone: "warn" as const, label: "Por vencer" };
+  if (days < 0) return { days, tone: "bad" as const, label: "Vencido" };
+  return { days, tone: "bad" as const, label: days === 0 ? "Vencido" : "Por vencer" };
 }
 
 export function compactDays(endDate: string) {

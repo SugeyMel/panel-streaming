@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { CustomerStatusBadge } from "@/components/ui/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import type { CustomerRow } from "@/lib/selectors";
 
 export function CustomerTable({
@@ -27,7 +28,7 @@ export function CustomerTable({
         ...(showSeller
           ? [{ key: "seller", header: "Vendedor", render: (row: CustomerRow) => row.sellerName ?? "—" }]
           : []),
-        { key: "whatsapp", header: "WhatsApp", render: (row: CustomerRow) => row.whatsapp },
+        { key: "whatsapp", header: "WhatsApp", render: (row: CustomerRow) => whatsappParaMostrar(row.whatsapp) },
         { key: "email", header: "Correo", render: (row: CustomerRow) => row.email },
         { key: "active", header: "Servicios activos", render: (row: CustomerRow) => row.activeServices },
         { key: "expired", header: "Servicios vencidos", render: (row: CustomerRow) => row.expiredServices },

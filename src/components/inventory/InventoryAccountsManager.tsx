@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteStreamingAccountAction,
@@ -9,26 +9,51 @@ import {
   upsertServiceAction,
   upsertStreamingAccountAction,
 } from "@/app/actions/business";
-import { MoreIcon } from "@/components/icons";
-import { PlatformLogo, PlatformName } from "@/components/ui/PlatformLogo";
+import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, CloseIcon, CopyIcon, EyeIcon, MoreIcon, WhatsAppIcon } from "@/components/icons";
+import { PlatformLogo } from "@/components/ui/PlatformLogo";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
 import { SearchBar } from "@/components/ui/SearchBar";
-import { formatCurrency, formatDate, serviceStatusFromDates, subscriptionStatusLabel } from "@/lib/format";
+import { dayMonthYearToIso, daysRemaining, formatCurrency, formatDate, isoToDayMonthYear, serviceStatusFromDates, subscriptionStatusLabel } from "@/lib/format";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import { platformDisplayName } from "@/lib/platform-logos";
 import {
   buildInventoryRows,
   compactDays,
+  inventoryEndDate,
+  inventoryHealth,
   parseProfileSlot,
   slotTone,
   type InventoryAccountRow,
   type ProfileSlot,
 } from "@/lib/inventory-matrix";
-import { renewalMessage, supportMessage, waLink } from "@/lib/whatsapp";
+import { renewalMessage, supportMessage, waLink, type PlantillasWhatsapp } from "@/lib/whatsapp";
+import { groupProductOffers } from "@/lib/selectors";
+import type { StoreOfferLink } from "@/lib/data/queries";
 import type { Customer, Platform, Product, StreamingAccount, Subscription } from "@/lib/types";
 
 type FilterId = "all" | "free" | "active" | "expiring" | "expired";
 type InventoryKind = "shared" | "full";
+
+const PAGE_SIZE = 6;
+const VISIBLE_PLATFORMS = 5;
+
+export const healthClass = {
+  ok: "text-[#22C55E]",
+  warn: "text-[#F59E0B]",
+  bad: "text-[#EF4444]",
+  none: "text-[#94A3B8]",
+  free: "text-[#60A5FA]",
+};
+
+export const badgeClass = {
+  ok: "bg-[#22C55E]/15 text-[#86EFAC]",
+  warn: "bg-[#F59E0B]/15 text-[#FCD34D]",
+  bad: "bg-[#EF4444]/15 text-[#FCA5A5]",
+  none: "bg-[#172033] text-[#94A3B8]",
+  free: "bg-[#2563EB]/15 text-[#93C5FD]",
+};
 
 const cellClass = {
   free: "border-[#8B5CF6]/50 bg-[#8B5CF6]/15 text-[#38BDF8]",
@@ -43,12 +68,16 @@ export function InventoryAccountsManager({
   services,
   customers,
   products,
+  offerLinks = [],
+  plantillas = {},
 }: {
   accounts: StreamingAccount[];
   platforms: Platform[];
   services: Subscription[];
   customers: Customer[];
   products: Product[];
+  offerLinks?: StoreOfferLink[];
+  plantillas?: PlantillasWhatsapp;
 }) {
   const router = useRouter();
   const rows = useMemo(
@@ -59,27 +88,44 @@ export function InventoryAccountsManager({
   const [kind, setKind] = useState<InventoryKind>("shared");
   const [filter, setFilter] = useState<FilterId>("all");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [accountForm, setAccountForm] = useState<StreamingAccount | null | "new">(null);
   const [assign, setAssign] = useState<{ row: InventoryAccountRow; slot: number } | null>(null);
   const [drawer, setDrawer] = useState<{ row: InventoryAccountRow; slot: ProfileSlot } | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
 
-  const sharedRows = useMemo(() => rows.filter((row) => !row.isFullAccount), [rows]);
-  const fullRows = useMemo(() => rows.filter((row) => row.isFullAccount), [rows]);
-  const scopedRows = kind === "full" ? fullRows : sharedRows;
+  const scopedRows = useMemo(
+    () => rows.filter((row) => (kind === "full" ? row.isFullAccount : !row.isFullAccount)),
+    [kind, rows],
+  );
 
   const platformCounts = useMemo(() => {
-    return platforms
-      .filter((item) => item.available)
-      .map((platform) => ({
-        ...platform,
-        count: scopedRows.filter((row) => row.account.platformId === platform.id).length,
-      }))
-      .filter((item) => item.count > 0);
+    const counts = new Map<string, number>();
+    for (const row of scopedRows) {
+      counts.set(row.account.platformId, (counts.get(row.account.platformId) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([id, count]) => {
+        const platform = platforms.find((item) => item.id === id);
+        return platform ? { platform, count } : null;
+      })
+      .filter((item): item is { platform: Platform; count: number } => Boolean(item))
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return platformDisplayName(a.platform).localeCompare(platformDisplayName(b.platform), "es");
+      });
   }, [platforms, scopedRows]);
 
-  const freeTotal = scopedRows.reduce((sum, row) => sum + row.freeCount, 0);
+  const visiblePlatforms = platformCounts.slice(0, VISIBLE_PLATFORMS);
+  const extraPlatforms = platformCounts.slice(VISIBLE_PLATFORMS);
+  const moreSelected = extraPlatforms.some((item) => item.platform.id === platformId);
+
+  const freeTotal =
+    kind === "full"
+      ? scopedRows.filter((row) => row.usedCount === 0 && inventoryHealth(inventoryEndDate(row)).tone !== "bad").length
+      : scopedRows.reduce((sum, row) => sum + row.freeCount, 0);
   const visible = useMemo(() => {
     let list = scopedRows.filter((row) => platformId === "all" || row.account.platformId === platformId);
     const q = query.trim().toLowerCase();
@@ -88,9 +134,13 @@ export function InventoryAccountsManager({
         const hay = [
           row.account.email,
           row.account.label,
+          row.account.password,
+          row.account.supplierName,
+          row.account.supplierContact,
           ...row.slots.flatMap((slot) => [
             slot.customer?.name,
             slot.customer?.whatsapp,
+            slot.customer ? whatsappParaMostrar(slot.customer.whatsapp) : "",
             slot.service?.accessProfile,
             slot.service?.accessPassword,
           ]),
@@ -100,247 +150,507 @@ export function InventoryAccountsManager({
         return hay.includes(q);
       });
     }
-    if (filter === "free") list = list.filter((row) => row.freeCount > 0);
-    if (filter === "active") list = list.filter((row) => row.hasActive);
-    if (filter === "expiring") list = list.filter((row) => row.hasExpiring);
-    if (filter === "expired") list = list.filter((row) => row.hasExpired);
-    if (filter === "free") list = [...list].sort((a, b) => b.freeCount - a.freeCount);
+    if (filter === "free") {
+      list =
+        kind === "full"
+          ? list.filter((row) => row.usedCount === 0 && inventoryHealth(inventoryEndDate(row)).tone !== "bad")
+          : list.filter((row) => row.freeCount > 0);
+    }
+    if (filter === "active") {
+      list =
+        kind === "full"
+          ? list.filter((row) => row.usedCount > 0 && inventoryHealth(inventoryEndDate(row)).tone === "ok")
+          : list.filter((row) => inventoryHealth(inventoryEndDate(row)).tone === "ok");
+    }
+    if (filter === "expiring") {
+      list = list.filter((row) => {
+        const health = inventoryHealth(inventoryEndDate(row));
+        return health.tone === "warn" || health.days === 1;
+      });
+    }
+    if (filter === "expired") {
+      list = list.filter((row) => {
+        const health = inventoryHealth(inventoryEndDate(row));
+        return health.days !== null && health.days <= 0;
+      });
+    }
+    if (filter === "free" && kind !== "full") list = [...list].sort((a, b) => b.freeCount - a.freeCount);
+    else {
+      list = [...list].sort((a, b) => {
+        const nameA = platformDisplayName(platforms.find((item) => item.id === a.account.platformId) ?? a.account.platformId);
+        const nameB = platformDisplayName(platforms.find((item) => item.id === b.account.platformId) ?? b.account.platformId);
+        const byPlatform = nameA.localeCompare(nameB, "es");
+        if (byPlatform !== 0) return byPlatform;
+        return a.account.email.localeCompare(b.account.email);
+      });
+    }
     return list;
-  }, [filter, platformId, query, scopedRows]);
+  }, [filter, kind, platformId, platforms, query, scopedRows]);
+
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const paged = visible.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+    setMoreOpen(false);
+  }, [filter, kind, platformId, query]);
+
+  useEffect(() => {
+    if (platformId !== "all" && !platformCounts.some((item) => item.platform.id === platformId)) {
+      setPlatformId("all");
+    }
+  }, [platformCounts, platformId]);
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const platformOf = (id: string) => platforms.find((item) => item.id === id);
   const nameOf = (id: string) => {
     const platform = platformOf(id);
     return platform ? platformDisplayName(platform) : "—";
   };
+  const planOf = (row: InventoryAccountRow) => {
+    const label = row.account.label.trim();
+    if (label && !/completa/i.test(label)) return label;
+    return row.isFullAccount ? "Completa" : "Compartida";
+  };
+
+  function selectKind(next: InventoryKind) {
+    setKind(next);
+    setPlatformId("all");
+    setPage(1);
+  }
+
+  function selectPlatform(id: string) {
+    setPlatformId(id);
+    setMoreOpen(false);
+    setPage(1);
+  }
+
+  async function saveExpiry(account: StreamingAccount, expiresAt: string) {
+    const result = await upsertStreamingAccountAction(accountToForm(account, { expiresAt }));
+    setMessage(result.ok ? "Vencimiento actualizado." : result.error ?? "No se pudo guardar");
+    if (result.ok) router.refresh();
+  }
+
+  async function saveSupplierExpiry(account: StreamingAccount, supplierExpiresAt: string) {
+    const result = await upsertStreamingAccountAction(accountToForm(account, { supplierExpiresAt }));
+    setMessage(result.ok ? "Vencimiento del proveedor actualizado." : result.error ?? "No se pudo guardar");
+    if (result.ok) router.refresh();
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h1 className="mr-auto text-lg font-semibold text-[#F8FAFC]">Inventario</h1>
-        <SearchBar value={query} onChange={setQuery} placeholder="Cliente, teléfono, correo, perfil..." />
-        <Button
-          className="h-9 min-h-9 px-3 text-xs"
-          onClick={() => setAccountForm("new")}
-        >
-          + {kind === "full" ? "Cuenta completa" : "Cuenta"}
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="min-w-0 lg:mr-auto">
+          <h1 className="text-[1.65rem] font-semibold tracking-tight text-[#F8FAFC]">Inventario</h1>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            {kind === "full"
+              ? "Cuentas completas, con cliente asignado y vencimientos."
+              : "Cuentas, perfiles libres y vencimientos de tu stock."}
+          </p>
+        </div>
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          placeholder={
+            kind === "full"
+              ? "Buscar por plataforma, correo, cliente, proveedor..."
+              : "Buscar por plataforma, correo, perfil..."
+          }
+        />
+        <Button className="h-11 min-h-11 shrink-0 px-4" onClick={() => setAccountForm("new")}>
+          + Agregar cuenta
         </Button>
       </div>
 
-      <div className="flex gap-1 overflow-x-auto pb-1">
-        <FilterChip active={kind === "shared"} onClick={() => { setKind("shared"); setPlatformId("all"); }} label="Perfiles" />
-        <FilterChip active={kind === "full"} onClick={() => { setKind("full"); setPlatformId("all"); }} label="Cuentas completas" />
+      <div className="flex flex-wrap gap-2">
+        <KindTab active={kind === "shared"} onClick={() => selectKind("shared")} label="Cuentas compartidas" />
+        <KindTab active={kind === "full"} onClick={() => selectKind("full")} label="Cuentas completas" />
       </div>
 
-      <div className="flex gap-1 overflow-x-auto pb-1">
-        <FilterChip active={platformId === "all"} onClick={() => setPlatformId("all")} label={`Todas ${scopedRows.length}`} />
-        {platformCounts.map((item) => (
+      <div className="space-y-2.5">
+        <FilterRow label="Plataformas:">
+          <FilterChip active={platformId === "all"} onClick={() => selectPlatform("all")} label={`Todas (${scopedRows.length})`} />
+          {visiblePlatforms.map((item) => (
+            <FilterChip
+              key={item.platform.id}
+              active={platformId === item.platform.id}
+              onClick={() => selectPlatform(item.platform.id)}
+              label={`${platformDisplayName(item.platform)} (${item.count})`}
+              platform={item.platform}
+            />
+          ))}
+          {extraPlatforms.length > 0 ? (
+            <div className="relative">
+              <FilterChip
+                active={moreSelected}
+                onClick={() => setMoreOpen((open) => !open)}
+                label="Más"
+                icon={<ChevronDownIcon className="h-3.5 w-3.5" />}
+              />
+              {moreOpen ? (
+                <div className="absolute top-full left-0 z-30 mt-1 min-w-[12rem] rounded-xl border border-[#253047] bg-[#111827] py-1 shadow-xl">
+                  {extraPlatforms.map((item) => (
+                    <button
+                      key={item.platform.id}
+                      type="button"
+                      onClick={() => selectPlatform(item.platform.id)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[#172033] ${
+                        platformId === item.platform.id ? "text-[#F8FAFC]" : "text-[#94A3B8]"
+                      }`}
+                    >
+                      <PlatformLogo platform={item.platform} size="filter" />
+                      {platformDisplayName(item.platform)} ({item.count})
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </FilterRow>
+        <FilterRow label="Estado:">
+          <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="Todas" />
           <FilterChip
-            key={item.id}
-            active={platformId === item.id}
-            onClick={() => setPlatformId(item.id)}
-            label={`${platformDisplayName(item)} ${item.count}`}
-            platform={item}
+            active={filter === "free"}
+            onClick={() => setFilter("free")}
+            label={kind === "full" ? `Disponibles (${freeTotal})` : `Libres (${freeTotal})`}
           />
-        ))}
-      </div>
-
-      <div className="flex gap-1 overflow-x-auto pb-1">
-        <FilterChip active={filter === "all"} onClick={() => setFilter("all")} label="Todas las cuentas" />
-        <FilterChip active={filter === "free"} onClick={() => setFilter("free")} label={kind === "full" ? `Sin cliente (${freeTotal})` : `Espacios libres (${freeTotal})`} tone="violet" />
-        <FilterChip active={filter === "active"} onClick={() => setFilter("active")} label="Activos" tone="success" />
-        <FilterChip active={filter === "expiring"} onClick={() => setFilter("expiring")} label="Por vencer" tone="warning" />
-        <FilterChip active={filter === "expired"} onClick={() => setFilter("expired")} label="Vencidos" tone="danger" />
+          <FilterChip active={filter === "active"} onClick={() => setFilter("active")} label="Vigentes" />
+          <FilterChip active={filter === "expiring"} onClick={() => setFilter("expiring")} label="Por vencer" />
+          <FilterChip active={filter === "expired"} onClick={() => setFilter("expired")} label="Vencidas" />
+        </FilterRow>
       </div>
       {message ? <p className="text-xs text-[#38BDF8]">{message}</p> : null}
 
-      {kind === "full" ? (
-        <FullAccountsTable
-          visible={visible}
-          menu={menu}
-          setMenu={setMenu}
-          nameOf={nameOf}
-          platformOf={platformOf}
-          onAssign={(row) => setAssign({ row, slot: 1 })}
-          onOpen={(row, slot) => setDrawer({ row, slot })}
-          onEditAccount={(account) => {
-            setAccountForm(account);
-            setMenu(null);
-          }}
-          onDelete={async (id) => {
-            const result = await deleteStreamingAccountAction(id);
-            setMessage(result.ok ? "Cuenta quitada." : result.error ?? "No se pudo quitar");
-            setMenu(null);
-            if (result.ok) router.refresh();
-          }}
-        />
-      ) : (
-      <>
-      <div className="hidden max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border border-[#253047] lg:block">
-        <table className="min-w-[1100px] w-full border-collapse text-left text-[11px] leading-tight">
-          <thead className="sticky top-0 z-20 bg-[#0B111C] text-[#94A3B8]">
-            <tr>
-              <th className="sticky left-0 z-30 bg-[#0B111C] px-2 py-2 font-medium">Cuenta / correo</th>
-              <th className="px-2 py-2 font-medium">Clave</th>
-              <th className="px-2 py-2 font-medium">Ocup.</th>
-              {["P1", "P2", "P3", "P4", "P5"].map((label) => (
-                <th key={label} className="px-1 py-2 font-medium">{label}</th>
-              ))}
-              <th className="px-2 py-2 font-medium">Vencimiento</th>
-              <th className="px-2 py-2 font-medium"> </th>
-            </tr>
+      <div className="hidden overflow-auto rounded-xl border border-[#253047] md:block">
+        <table className={`w-full border-collapse text-left text-xs ${kind === "full" ? "min-w-[1280px]" : "min-w-[1080px]"}`}>
+          <thead className="sticky top-0 z-20 bg-[#0B111C] text-[10px] tracking-[0.16em] text-[#94A3B8] uppercase">
+            {kind === "full" ? (
+              <tr>
+                <th className="px-3 py-2.5 font-medium">Plataforma</th>
+                <th className="px-3 py-2.5 font-medium">Cuenta</th>
+                <th className="px-3 py-2.5 font-medium">Cliente</th>
+                <th className="px-3 py-2.5 font-medium">Venc. cuenta</th>
+                <th className="px-3 py-2.5 font-medium">Días</th>
+                <th className="px-3 py-2.5 font-medium">Estado</th>
+                <th className="px-3 py-2.5 font-medium">Proveedor</th>
+                <th className="px-3 py-2.5 font-medium">Venc. proveedor</th>
+                <th className="px-3 py-2.5 font-medium">Días</th>
+                <th className="px-3 py-2.5 font-medium">Acciones</th>
+              </tr>
+            ) : (
+              <tr>
+                <th className="px-3 py-2.5 font-medium">Plataforma</th>
+                <th className="px-3 py-2.5 font-medium">Cuenta</th>
+                <th className="px-3 py-2.5 font-medium">Perfiles / Detalles</th>
+                <th className="px-3 py-2.5 font-medium">Vencimiento</th>
+                <th className="px-3 py-2.5 font-medium">Días</th>
+                <th className="px-3 py-2.5 font-medium">Estado</th>
+                <th className="px-3 py-2.5 font-medium">Acciones</th>
+              </tr>
+            )}
           </thead>
           <tbody>
             {visible.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-[#94A3B8]">
+                <td colSpan={kind === "full" ? 10 : 7} className="px-3 py-10 text-center text-[#94A3B8]">
                   No hay cuentas con ese filtro.
                 </td>
               </tr>
             ) : (
-              visible.map((row) => (
-                <tr key={row.account.id} className="border-t border-[#253047] hover:bg-[#172033]/60">
-                  <td className="sticky left-0 z-10 max-w-[240px] bg-[#070B12] px-2 py-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <PlatformLogo platform={platformOf(row.account.platformId) ?? row.account.platformId} size="table" />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-[#F8FAFC]">{row.account.email}</p>
-                        <p className="truncate text-[#94A3B8]">
-                          {nameOf(row.account.platformId)} · {row.account.label || "Perfiles"}
-                        </p>
+              paged.map((row) => {
+                const end = inventoryEndDate(row);
+                const health = inventoryHealth(end);
+                const supplierHealth = inventoryHealth(row.account.supplierExpiresAt);
+                const assigned = assignedSlot(row);
+                return (
+                  <tr key={row.account.id} className="border-t border-[#253047] hover:bg-[#172033]/50">
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <PlatformLogo platform={platformOf(row.account.platformId) ?? row.account.platformId} size="table" />
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-[#F8FAFC]">{nameOf(row.account.platformId)}</p>
+                          <p className="truncate text-[11px] text-[#94A3B8]">{kind === "full" ? "Completa" : planOf(row)}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-2 py-1.5 tracking-widest text-[#94A3B8]">••••••</td>
-                  <td className="whitespace-nowrap px-2 py-1.5 text-[#F8FAFC]">
-                    {row.usedCount}/{row.slots.length}{" "}
-                    <span className="text-[#94A3B8]">
-                      {"●".repeat(row.usedCount)}
-                      {"○".repeat(row.freeCount)}
-                    </span>
-                  </td>
-                  {row.isFullAccount ? (
-                    <td colSpan={5} className="px-1 py-1">
-                      <SlotButton
-                        slot={row.slots[0] ?? { index: 1, service: null, customer: null }}
-                        onOccupied={() => row.slots[0]?.service && setDrawer({ row, slot: row.slots[0] })}
-                        onFree={() => setAssign({ row, slot: 1 })}
-                      />
                     </td>
-                  ) : (
-                    [1, 2, 3, 4, 5].map((n) => {
-                      const slot = row.slots.find((item) => item.index === n);
-                      if (!slot) {
-                        return <td key={n} className="px-1 py-1" />;
-                      }
-                      return (
-                        <td key={n} className="px-1 py-1">
-                          <SlotButton
-                            slot={slot}
-                            onOccupied={() => setDrawer({ row, slot })}
-                            onFree={() => setAssign({ row, slot: n })}
+                    <td className="px-3 py-2.5">
+                      <p className="truncate font-medium text-[#F8FAFC]">{row.account.email}</p>
+                      <SecretValue value={row.account.password} />
+                    </td>
+                    {kind === "full" ? (
+                      <>
+                        <td className="px-3 py-2.5">
+                          <ClientBadge
+                            row={row}
+                            assigned={assigned}
+                            onOccupied={(slot) => setDrawer({ row, slot })}
+                            onFree={(slot) => setAssign({ row, slot: slot.index })}
                           />
                         </td>
-                      );
-                    })
-                  )}
-                  <td className="whitespace-nowrap px-2 py-1.5 text-[#94A3B8]">
-                    {row.nearestEnd ? formatDate(row.nearestEnd) : "—"}
-                  </td>
-                  <td className="relative px-1 py-1.5">
-                    <button
-                      type="button"
-                      className="rounded p-1 text-[#94A3B8] hover:text-white"
-                      onClick={() => setMenu(menu === row.account.id ? null : row.account.id)}
-                    >
-                      <MoreIcon className="h-4 w-4" />
-                    </button>
-                    {menu === row.account.id ? (
-                      <div className="absolute right-2 z-40 w-36 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs">
+                        <td className="px-3 py-2.5">
+                          <ExpiryDateInput
+                            iso={row.account.expiresAt ?? ""}
+                            onCommit={(value) => saveExpiry(row.account, value)}
+                          />
+                        </td>
+                        <td className={`px-3 py-2.5 font-semibold ${healthClass[health.tone]}`}>
+                          {health.days === null ? "—" : health.days}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <HealthBadge health={fullAccountBadge(row, health)} />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <SupplierCell account={row.account} />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <ExpiryDateInput
+                            iso={row.account.supplierExpiresAt ?? ""}
+                            onCommit={(value) => saveSupplierExpiry(row.account, value)}
+                          />
+                        </td>
+                        <td className={`px-3 py-2.5 font-semibold ${healthClass[supplierHealth.tone]}`}>
+                          {row.account.supplierExpiresAt ? supplierHealth.days : "—"}
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-3 py-2.5">
+                          <ProfilePills
+                            row={row}
+                            onOccupied={(slot) => setDrawer({ row, slot })}
+                            onFree={(slot) => setAssign({ row, slot: slot.index })}
+                          />
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <ExpiryDateInput
+                            iso={row.account.expiresAt ?? end?.slice(0, 10) ?? ""}
+                            onCommit={(value) => saveExpiry(row.account, value)}
+                          />
+                        </td>
+                        <td className={`px-3 py-2.5 font-semibold ${healthClass[health.tone]}`}>
+                          {health.days === null ? "—" : health.days}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <HealthBadge health={health} />
+                        </td>
+                      </>
+                    )}
+                    <td className="relative px-3 py-2.5">
+                      <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          className="block w-full px-3 py-1.5 text-left hover:bg-[#172033]"
-                          onClick={() => {
-                            setAccountForm(row.account);
-                            setMenu(null);
-                          }}
+                          className="rounded-lg bg-[#F8FAFC] px-3 py-1.5 text-[11px] font-semibold text-[#0B111C]"
+                          onClick={() => setAccountForm(row.account)}
                         >
-                          Editar cuenta
+                          Editar
                         </button>
                         <button
                           type="button"
-                          className="block w-full px-3 py-1.5 text-left text-[#EF4444] hover:bg-[#172033]"
-                          onClick={async () => {
-                            const result = await deleteStreamingAccountAction(row.account.id);
-                            setMessage(result.ok ? "Cuenta quitada." : result.error ?? "No se pudo quitar");
-                            setMenu(null);
-                            if (result.ok) router.refresh();
-                          }}
+                          className="rounded p-1 text-[#94A3B8] hover:text-white"
+                          onClick={() => setMenu(menu === row.account.id ? null : row.account.id)}
                         >
-                          Quitar
+                          <MoreIcon className="h-4 w-4" />
                         </button>
                       </div>
-                    ) : null}
-                  </td>
-                </tr>
-              ))
+                      {menu === row.account.id ? (
+                        <div className="absolute right-3 z-40 w-36 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs">
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left hover:bg-[#172033]"
+                            onClick={() => {
+                              setAccountForm(row.account);
+                              setMenu(null);
+                            }}
+                          >
+                            Editar cuenta
+                          </button>
+                          <button
+                            type="button"
+                            className="block w-full px-3 py-1.5 text-left text-[#EF4444] hover:bg-[#172033]"
+                            onClick={async () => {
+                              const result = await deleteStreamingAccountAction(row.account.id);
+                              setMessage(result.ok ? "Cuenta quitada." : result.error ?? "No se pudo quitar");
+                              setMenu(null);
+                              if (result.ok) router.refresh();
+                            }}
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
-
-      <div className="space-y-2 lg:hidden">
-        {visible.map((row) => (
-          <div key={row.account.id} className="rounded-xl border border-[#253047] bg-[#111827] p-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <p className="flex min-w-0 items-center gap-1.5 text-xs font-semibold text-[#F8FAFC]">
-                <PlatformLogo platform={platformOf(row.account.platformId) ?? row.account.platformId} size="table" />
-                <span className="truncate">
-                  {nameOf(row.account.platformId)} · {row.usedCount}/{row.slots.length}
-                </span>
-              </p>
-              <p className="text-[10px] text-[#94A3B8]">{row.nearestEnd ? formatDate(row.nearestEnd) : ""}</p>
-            </div>
-            <p className="truncate text-[11px] text-[#94A3B8]">{row.account.email}</p>
-            <div className="mt-2 space-y-1">
-              {row.slots.map((slot) => {
-                const tone = slotTone(slot.service);
-                return (
-                  <button
-                    key={slot.index}
-                    type="button"
-                    onClick={() =>
-                      slot.service ? setDrawer({ row, slot }) : setAssign({ row, slot: slot.index })
-                    }
-                    className={`flex w-full items-center justify-between rounded-md border px-2 py-1 text-left text-[11px] ${cellClass[tone]}`}
-                  >
-                    <span>
-                      P{slot.index}{" "}
-                      {slot.service
-                        ? slot.customer?.name ?? (parseProfileSlot(slot.service.accessProfile).name || "")
-                        : "LIBRE"}
-                    </span>
-                    <span>
-                      {slot.service ? compactDays(slot.service.endDate) : "+"}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+      <div className="hidden items-center justify-between gap-3 md:flex">
+        <p className="text-xs text-[#94A3B8]">
+          {visible.length === 0
+            ? "Sin cuentas para mostrar"
+            : `Mostrando ${paged.length} de ${visible.length} cuentas`}
+        </p>
+        {pageCount > 1 ? (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="rounded-lg border border-[#253047] p-1.5 text-[#94A3B8] disabled:opacity-40"
+              disabled={page <= 1}
+              onClick={() => setPage((item) => Math.max(1, item - 1))}
+              aria-label="Anterior"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+            {Array.from({ length: pageCount }, (_, index) => index + 1).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setPage(item)}
+                className={`min-w-8 rounded-lg px-2 py-1 text-xs font-semibold ${
+                  page === item ? "bg-[#2563EB] text-white" : "text-[#94A3B8] hover:bg-[#172033]"
+                }`}
+              >
+                {item}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="rounded-lg border border-[#253047] p-1.5 text-[#94A3B8] disabled:opacity-40"
+              disabled={page >= pageCount}
+              onClick={() => setPage((item) => Math.min(pageCount, item + 1))}
+              aria-label="Siguiente"
+            >
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
           </div>
-        ))}
+        ) : null}
       </div>
-      </>
-      )}
 
+      <div className="space-y-2 md:hidden">
+        {visible.length === 0 ? (
+          <p className="rounded-xl border border-[#253047] px-3 py-8 text-center text-sm text-[#94A3B8]">
+            No hay cuentas con ese filtro.
+          </p>
+        ) : (
+          paged.map((row) => {
+            const end = inventoryEndDate(row);
+            const health = inventoryHealth(end);
+            const supplierHealth = inventoryHealth(row.account.supplierExpiresAt);
+            const assigned = assignedSlot(row);
+            return (
+              <article key={row.account.id} className="rounded-xl border border-[#253047] bg-[#111827] p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <PlatformLogo platform={platformOf(row.account.platformId) ?? row.account.platformId} size={28} />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[#F8FAFC]">{nameOf(row.account.platformId)}</p>
+                      <p className="truncate text-[11px] text-[#94A3B8]">{kind === "full" ? "Completa" : planOf(row)}</p>
+                    </div>
+                  </div>
+                  <HealthBadge health={kind === "full" ? fullAccountBadge(row, health) : health} />
+                </div>
+                <p className="mt-2 truncate text-xs text-[#F8FAFC]">{row.account.email}</p>
+                <SecretValue value={row.account.password} />
+                {kind === "full" ? (
+                  <>
+                    <div className="mt-2">
+                      <ClientBadge
+                        row={row}
+                        assigned={assigned}
+                        onOccupied={(slot) => setDrawer({ row, slot })}
+                        onFree={(slot) => setAssign({ row, slot: slot.index })}
+                      />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                      <ExpiryDateInput
+                        iso={row.account.expiresAt ?? ""}
+                        onCommit={(value) => saveExpiry(row.account, value)}
+                      />
+                      <span className={`font-semibold ${healthClass[health.tone]}`}>
+                        {health.days === null ? "—" : `${health.days}d`}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <SupplierCell account={row.account} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                      <ExpiryDateInput
+                        iso={row.account.supplierExpiresAt ?? ""}
+                        onCommit={(value) => saveSupplierExpiry(row.account, value)}
+                      />
+                      <span className={`font-semibold ${healthClass[supplierHealth.tone]}`}>
+                        {row.account.supplierExpiresAt ? `${supplierHealth.days}d` : "—"}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-2">
+                      <ProfilePills
+                        row={row}
+                        onOccupied={(slot) => setDrawer({ row, slot })}
+                        onFree={(slot) => setAssign({ row, slot: slot.index })}
+                      />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                      <ExpiryDateInput
+                        iso={row.account.expiresAt ?? end?.slice(0, 10) ?? ""}
+                        onCommit={(value) => saveExpiry(row.account, value)}
+                      />
+                      <span className={`font-semibold ${healthClass[health.tone]}`}>
+                        {health.days === null ? "—" : `${health.days}d`}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    className="flex-1 rounded-lg bg-[#F8FAFC] py-1.5 text-xs font-semibold text-[#0B111C]"
+                    onClick={() => setAccountForm(row.account)}
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-[#253047] px-3 py-1.5 text-xs text-[#EF4444]"
+                    onClick={async () => {
+                      const result = await deleteStreamingAccountAction(row.account.id);
+                      setMessage(result.ok ? "Cuenta quitada." : result.error ?? "No se pudo quitar");
+                      if (result.ok) router.refresh();
+                    }}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              </article>
+            );
+          })
+        )}
+        {visible.length > 0 ? (
+          <p className="text-center text-[11px] text-[#94A3B8]">
+            Mostrando {paged.length} de {visible.length}
+          </p>
+        ) : null}
+      </div>
+
+      {accountForm !== null ? (
       <AccountForm
-        open={accountForm !== null}
-        editing={accountForm && accountForm !== "new" ? accountForm : null}
+        key={accountForm === "new" ? "new" : accountForm.id}
+        editing={accountForm !== "new" ? accountForm : null}
+        defaultKind={kind === "full" ? "full" : "profiles"}
         platforms={platforms}
-        fullAccount={kind === "full"}
+        products={products}
+        offerLinks={offerLinks}
         onClose={() => setAccountForm(null)}
         onMessage={setMessage}
       />
+      ) : null}
       {assign ? (
         <AssignModal
           row={assign.row}
@@ -356,6 +666,7 @@ export function InventoryAccountsManager({
           row={drawer.row}
           slot={drawer.slot}
           platformName={nameOf(drawer.row.account.platformId)}
+          plantillas={plantillas}
           onClose={() => setDrawer(null)}
           onMessage={setMessage}
           onEdit={() => {
@@ -369,171 +680,269 @@ export function InventoryAccountsManager({
   );
 }
 
-function FullAccountsTable({
-  visible,
-  menu,
-  setMenu,
-  nameOf,
-  platformOf,
-  onAssign,
-  onOpen,
-  onEditAccount,
-  onDelete,
+export function accountToForm(account: StreamingAccount, extra?: Partial<{ expiresAt: string; supplierExpiresAt: string }>) {
+  const form = new FormData();
+  form.set("id", account.id);
+  form.set("platformId", account.platformId);
+  form.set("email", account.email);
+  form.set("password", account.password);
+  form.set("label", account.label);
+  form.set("maxProfiles", String(account.maxProfiles));
+  form.set("status", account.status);
+  form.set("expiresAt", extra?.expiresAt ?? account.expiresAt ?? "");
+  form.set("supplierName", account.supplierName);
+  form.set("supplierContact", account.supplierContact);
+  form.set("supplierCost", String(account.supplierCost || 0));
+  form.set("supplierNote", account.supplierNote);
+  form.set("supplierExpiresAt", extra?.supplierExpiresAt ?? account.supplierExpiresAt ?? "");
+  form.set("saleKind", account.saleKind ?? "profiles");
+  form.set("resellerName", account.resellerName ?? "");
+  form.set("resellerWhatsapp", account.resellerWhatsapp ?? "");
+  return form;
+}
+
+export function ExpiryDateInput({
+  iso,
+  name,
+  onCommit,
+  className = "rounded-lg border border-[#253047] bg-[#0B111C] px-2 py-1 pr-8 text-[11px] text-[#F8FAFC]",
 }: {
-  visible: InventoryAccountRow[];
-  menu: string | null;
-  setMenu: (id: string | null) => void;
-  nameOf: (id: string) => string;
-  platformOf: (id: string) => Platform | undefined;
-  onAssign: (row: InventoryAccountRow) => void;
-  onOpen: (row: InventoryAccountRow, slot: ProfileSlot) => void;
-  onEditAccount: (account: StreamingAccount) => void;
-  onDelete: (id: string) => void;
+  iso: string;
+  name?: string;
+  onCommit?: (iso: string) => void;
+  className?: string;
 }) {
+  const [text, setText] = useState(iso ? isoToDayMonthYear(iso) : "");
+  const isoValue = dayMonthYearToIso(text) || iso;
+  const fillsWidth = className.includes("w-full");
+  const hasMinWidth = className.includes("min-w-");
+
+  function applyIso(next: string) {
+    if (!next) return;
+    setText(isoToDayMonthYear(next));
+    onCommit?.(next);
+  }
+
   return (
-    <>
-      <div className="hidden max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border border-[#253047] lg:block">
-        <table className="w-full min-w-[720px] border-collapse text-left text-[11px] leading-tight">
-          <thead className="sticky top-0 z-20 bg-[#0B111C] text-[#94A3B8]">
-            <tr>
-              <th className="sticky left-0 z-30 bg-[#0B111C] px-2 py-2 font-medium">Cliente</th>
-              <th className="px-2 py-2 font-medium">Correo</th>
-              <th className="px-2 py-2 font-medium">Clave</th>
-              <th className="px-2 py-2 font-medium">Vencimiento</th>
-              <th className="px-2 py-2 font-medium"> </th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-3 py-8 text-center text-[#94A3B8]">
-                  No hay cuentas completas. Añade una con 1 perfil.
-                </td>
-              </tr>
-            ) : (
-              visible.map((row) => {
-                const slot = row.slots[0] ?? { index: 1, service: null, customer: null };
-                return (
-                  <tr key={row.account.id} className="border-t border-[#253047] hover:bg-[#172033]/60">
-                    <td className="sticky left-0 z-10 bg-[#070B12] px-2 py-1.5">
-                      <button
-                        type="button"
-                        className="text-left"
-                        onClick={() => (slot.service ? onOpen(row, slot) : onAssign(row))}
-                      >
-                        <p className={`truncate font-medium ${slot.service ? "text-[#F8FAFC]" : "text-[#38BDF8]"}`}>
-                          {slot.customer?.name ?? (slot.service ? "Cliente" : "LIBRE +")}
-                        </p>
-                        <p className="truncate text-[#94A3B8]">
-                          <PlatformName
-                            platform={platformOf(row.account.platformId) ?? row.account.platformId}
-                            label={nameOf(row.account.platformId)}
-                            size="table"
-                          />
-                        </p>
-                      </button>
-                    </td>
-                    <td className="max-w-[240px] truncate px-2 py-1.5 text-[#F8FAFC]">{row.account.email}</td>
-                    <td className="px-2 py-1.5 font-mono text-[#F8FAFC]">{row.account.password || "—"}</td>
-                    <td className="whitespace-nowrap px-2 py-1.5 text-[#94A3B8]">
-                      {slot.service ? `${formatDate(slot.service.endDate)} · ${compactDays(slot.service.endDate)}` : "—"}
-                    </td>
-                    <td className="relative px-1 py-1.5">
-                      <button
-                        type="button"
-                        className="rounded p-1 text-[#94A3B8] hover:text-white"
-                        onClick={() => setMenu(menu === row.account.id ? null : row.account.id)}
-                      >
-                        <MoreIcon className="h-4 w-4" />
-                      </button>
-                      {menu === row.account.id ? (
-                        <div className="absolute right-2 z-40 w-36 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs">
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-1.5 text-left hover:bg-[#172033]"
-                            onClick={() => onEditAccount(row.account)}
-                          >
-                            Editar cuenta
-                          </button>
-                          <button
-                            type="button"
-                            className="block w-full px-3 py-1.5 text-left text-[#EF4444] hover:bg-[#172033]"
-                            onClick={() => onDelete(row.account.id)}
-                          >
-                            Quitar
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="space-y-2 lg:hidden">
-        {visible.map((row) => {
-          const slot = row.slots[0] ?? { index: 1, service: null, customer: null };
-          return (
-            <button
-              key={row.account.id}
-              type="button"
-              onClick={() => (slot.service ? onOpen(row, slot) : onAssign(row))}
-              className="block w-full rounded-xl border border-[#253047] bg-[#111827] p-2.5 text-left"
-            >
-              <p className="flex items-center gap-1.5 text-xs font-semibold text-[#F8FAFC]">
-                <PlatformLogo platform={platformOf(row.account.platformId) ?? row.account.platformId} size="table" />
-                <span className="truncate">
-                  {slot.customer?.name ?? "LIBRE"} · {nameOf(row.account.platformId)}
-                </span>
-              </p>
-              <p className="truncate text-[11px] text-[#94A3B8]">{row.account.email}</p>
-              <p className="mt-1 font-mono text-[11px] text-[#F8FAFC]">{row.account.password || "—"}</p>
-              <p className="text-[11px] text-[#94A3B8]">
-                {slot.service ? `${formatDate(slot.service.endDate)} · ${compactDays(slot.service.endDate)}` : "Sin vencimiento"}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-    </>
+    <span className={`relative inline-flex items-center ${fillsWidth ? "w-full" : hasMinWidth ? "" : "min-w-[9.5rem]"}`}>
+      {name ? <input type="hidden" name={name} value={isoValue} /> : null}
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="DD/MM/AAAA"
+        value={text}
+        onChange={(event) => {
+          const next = event.target.value;
+          setText(next);
+          const parsed = dayMonthYearToIso(next);
+          if (parsed && name) onCommit?.(parsed);
+        }}
+        onBlur={() => {
+          const parsed = dayMonthYearToIso(text);
+          if (!parsed) {
+            setText(iso ? isoToDayMonthYear(iso) : "");
+            return;
+          }
+          applyIso(parsed);
+        }}
+        className={className}
+      />
+      <input
+        type="date"
+        value={isoValue}
+        aria-label="Abrir calendario"
+        onChange={(event) => applyIso(event.target.value)}
+        className="absolute top-1/2 right-1 h-6 w-6 -translate-y-1/2 cursor-pointer opacity-0"
+      />
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        className="pointer-events-none absolute top-1/2 right-1.5 h-3.5 w-3.5 -translate-y-1/2 text-[#94A3B8]"
+        aria-hidden="true"
+      >
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 3v4M16 3v4M4 10h16" />
+      </svg>
+    </span>
   );
 }
 
-function SlotButton({
-  slot,
+export function SecretValue({ value, className = "mt-0.5" }: { value: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  if (!value) return <p className="text-[11px] text-[#64748B]">Sin clave</p>;
+  return (
+    <div className={`flex items-center gap-0.5 text-[11px] text-[#94A3B8] ${className}`}>
+      <span className="font-mono tracking-widest">{open ? value : "••••••••"}</span>
+      <button type="button" className="rounded p-0.5 hover:text-white" onClick={() => setOpen((item) => !item)} aria-label="Ver clave">
+        <EyeIcon className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="rounded p-0.5 hover:text-white"
+        aria-label="Copiar"
+        onClick={() => navigator.clipboard.writeText(value)}
+      >
+        <CopyIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function assignedSlot(row: InventoryAccountRow) {
+  return row.slots.find((slot) => slot.service || slot.customer) ?? row.slots[0] ?? null;
+}
+
+function fullAccountBadge(row: InventoryAccountRow, health: ReturnType<typeof inventoryHealth>) {
+  if (row.usedCount === 0 && health.tone !== "bad" && health.tone !== "warn" && health.days !== 1) {
+    return { ...health, tone: "free" as const, label: "Disponible" };
+  }
+  return health;
+}
+
+function ClientBadge({
+  row,
+  assigned,
   onOccupied,
   onFree,
 }: {
-  slot: ProfileSlot;
-  onOccupied: () => void;
-  onFree: () => void;
+  row: InventoryAccountRow;
+  assigned: ProfileSlot | null;
+  onOccupied: (slot: ProfileSlot) => void;
+  onFree: (slot: ProfileSlot) => void;
 }) {
-  const tone = slotTone(slot.service);
+  const slot = assigned ?? row.slots[0];
+  const name = slot?.customer?.name || parseProfileSlot(slot?.service?.accessProfile).name;
+  const occupied = Boolean(slot?.service);
   return (
     <button
       type="button"
-      onClick={() => (slot.service ? onOccupied() : onFree())}
-      className={`flex min-h-9 w-full flex-col items-start justify-center rounded-md border px-1.5 py-0.5 text-left ${cellClass[tone]}`}
+      onClick={() => {
+        if (!slot) return;
+        if (occupied) onOccupied(slot);
+        else onFree(slot);
+      }}
+      className="rounded-md border border-[#253047] bg-[#172033] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#F8FAFC] uppercase"
     >
-      {slot.service ? (
-        <>
-          <span className="w-full truncate font-medium">
-            {slot.customer?.name ?? (parseProfileSlot(slot.service.accessProfile).name || "Cliente")}
-          </span>
-          <span className="flex w-full items-center justify-between gap-1 text-[10px] opacity-80">
-            <span>{slot.service.accessPassword || "—"}</span>
-            <span>{compactDays(slot.service.endDate)}</span>
-          </span>
-        </>
-      ) : (
-        <>
-          <span className="font-semibold">LIBRE</span>
-          <span className="text-[10px]">+</span>
-        </>
-      )}
+      {occupied || name ? name || "Cliente" : "LIBRE"}
     </button>
+  );
+}
+
+function SupplierCell({ account }: { account: StreamingAccount }) {
+  if (!account.supplierName && !account.supplierContact) {
+    return <span className="text-[#94A3B8]">—</span>;
+  }
+  const phone = account.supplierContact.replace(/\D/g, "");
+  return (
+    <div className="min-w-0">
+      <p className="truncate font-medium text-[#F8FAFC]">{account.supplierName || "Proveedor"}</p>
+      {phone ? (
+        <a
+          href={waLink(account.supplierContact, "")}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-[#22C55E] hover:underline"
+        >
+          <WhatsAppIcon className="h-3.5 w-3.5" />
+          {account.supplierContact}
+        </a>
+      ) : account.supplierContact ? (
+        <p className="truncate text-[11px] text-[#94A3B8]">{account.supplierContact}</p>
+      ) : null}
+    </div>
+  );
+}
+
+export function HealthBadge({ health }: { health: { tone: keyof typeof badgeClass; label: string } }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${badgeClass[health.tone]}`}>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          health.tone === "ok"
+            ? "bg-[#22C55E]"
+            : health.tone === "warn"
+              ? "bg-[#F59E0B]"
+              : health.tone === "bad"
+                ? "bg-[#EF4444]"
+                : health.tone === "free"
+                  ? "bg-[#3B82F6]"
+                  : "bg-[#64748B]"
+        }`}
+      />
+      {health.label}
+    </span>
+  );
+}
+
+function ProfilePills({
+  row,
+  onOccupied,
+  onFree,
+}: {
+  row: InventoryAccountRow;
+  onOccupied: (slot: ProfileSlot) => void;
+  onFree: (slot: ProfileSlot) => void;
+}) {
+  const occupied = row.slots.filter((slot) => slot.service);
+  const free = row.slots.filter((slot) => !slot.service);
+  const shown = occupied.slice(0, 4);
+  const extra = occupied.length - shown.length;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {shown.map((slot) => {
+        const parsed = parseProfileSlot(slot.service?.accessProfile);
+        const label = parsed.name || slot.customer?.name || `P${slot.index}`;
+        const tone = slotTone(slot.service);
+        return (
+          <button
+            key={slot.index}
+            type="button"
+            onClick={() => onOccupied(slot)}
+            className={`max-w-[7rem] truncate rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${cellClass[tone]}`}
+          >
+            {label}
+          </button>
+        );
+      })}
+      {extra > 0 ? (
+        <span className="rounded-md border border-[#253047] px-1.5 py-0.5 text-[10px] text-[#94A3B8]">+{extra}</span>
+      ) : null}
+      {free.map((slot) => (
+        <button
+          key={slot.index}
+          type="button"
+          onClick={() => onFree(slot)}
+          className="rounded-md border border-[#8B5CF6]/40 px-1.5 py-0.5 text-[10px] font-semibold text-[#C4B5FD]"
+        >
+          +
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function KindTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
+        active ? "bg-[#2563EB] text-white shadow-[0_8px_20px_rgba(37,99,235,0.28)]" : "border border-[#253047] bg-[#111827] text-[#94A3B8]"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function FilterRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+      <span className="shrink-0 text-[11px] font-medium text-[#94A3B8]">{label}</span>
+      <div className="flex items-center gap-1.5">{children}</div>
+    </div>
   );
 }
 
@@ -541,108 +950,258 @@ function FilterChip({
   label,
   active,
   onClick,
-  tone,
   platform,
+  icon,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
-  tone?: "violet" | "success" | "warning" | "danger";
-  platform?: { id?: string; slug?: string; name?: string };
+  platform?: Platform;
+  icon?: ReactNode;
 }) {
-  const colors = {
-    violet: "border-[#8B5CF6] text-[#C4B5FD]",
-    success: "border-[#22C55E] text-[#86EFAC]",
-    warning: "border-[#F59E0B] text-[#FCD34D]",
-    danger: "border-[#EF4444] text-[#FCA5A5]",
-  };
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
-        active
-          ? `bg-[#172033] ${tone ? colors[tone] : "border-[#38BDF8] text-[#F8FAFC]"}`
-          : "border-[#253047] text-[#94A3B8]"
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
+        active ? "border-[#2563EB] bg-[#2563EB] text-white" : "border-[#253047] bg-[#0B111C] text-[#94A3B8]"
       }`}
     >
       {platform ? <PlatformLogo platform={platform} size="filter" /> : null}
       {label}
+      {icon}
     </button>
   );
 }
 
-function AccountForm({
-  open,
+export function AccountForm({
   editing,
   platforms,
-  fullAccount = false,
+  products = [],
+  offerLinks = [],
+  defaultKind = "profiles",
   onClose,
   onMessage,
 }: {
-  open: boolean;
   editing: StreamingAccount | null;
   platforms: Platform[];
-  fullAccount?: boolean;
+  products?: Product[];
+  offerLinks?: StoreOfferLink[];
+  defaultKind?: "profiles" | "full";
   onClose: () => void;
   onMessage: (value: string | null) => void;
 }) {
   const router = useRouter();
-  if (!open) return null;
+  const [expiresAt, setExpiresAt] = useState(editing?.expiresAt ?? "");
+  const [supplierExpiresAt, setSupplierExpiresAt] = useState(editing?.supplierExpiresAt ?? "");
+  const [kind, setKind] = useState<"profiles" | "full">(
+    editing?.saleKind ?? (editing ? (editing.maxProfiles <= 1 || /completa/i.test(editing.label) ? "full" : "profiles") : defaultKind),
+  );
+  const [platformId, setPlatformId] = useState(editing?.platformId ?? platforms.find((item) => item.available)?.id ?? "");
+  const offers = groupProductOffers(products.filter((item) => item.platformId === platformId && item.active));
+  const linkedName =
+    editing ? offerLinks.find((item) => item.accountId === editing.id)?.productName ?? "" : "";
+  const days = expiresAt ? daysRemaining(expiresAt) : null;
+  const health = inventoryHealth(expiresAt || null);
   return (
-    <Modal open={open} title={editing ? "Editar cuenta" : "Añadir cuenta"} onClose={onClose}>
-      <form
-        key={editing?.id ?? "new"}
-        className="space-y-3"
-        action={async (formData) => {
-          if (editing) formData.set("id", editing.id);
-          if (fullAccount && !editing) {
-            formData.set("maxProfiles", "1");
-            if (!String(formData.get("label") ?? "").trim()) formData.set("label", "completa");
-          }
-          const result = await upsertStreamingAccountAction(formData);
-          onMessage(result.ok ? "Cuenta guardada." : result.error ?? "No se pudo guardar");
-          if (result.ok) {
-            onClose();
-            router.refresh();
-          }
-        }}
-      >
-        <select name="platformId" defaultValue={editing?.platformId} className="ui-field">
-          {platforms.filter((item) => item.available).map((item) => (
-            <option key={item.id} value={item.id}>{platformDisplayName(item)}</option>
-          ))}
-        </select>
-        <input name="email" defaultValue={editing?.email} placeholder="Correo / usuario" className="ui-field" />
-        <input name="password" defaultValue={editing?.password} placeholder="Clave de la cuenta" className="ui-field" />
-        <input
-          name="label"
-          defaultValue={editing?.label ?? (fullAccount ? "completa" : "")}
-          placeholder="Etiqueta (opcional)"
-          className="ui-field"
-        />
-        {fullAccount ? (
-          <input type="hidden" name="maxProfiles" value="1" />
-        ) : (
-          <input name="maxProfiles" type="number" min={1} max={8} defaultValue={editing?.maxProfiles ?? 5} className="ui-field" />
-        )}
-        <select name="status" defaultValue={editing?.status ?? "available"} className="ui-field">
-          <option value="available">Disponible</option>
-          <option value="inactive">Inactiva</option>
-          <option value="full">Llena</option>
-        </select>
-        <p className="text-[11px] text-[#94A3B8]">
-          {fullAccount
-            ? "Cuenta completa: un solo cliente, correo, clave y vencimiento."
-            : "5 perfiles = venta por perfil. 1 perfil = cuenta completa."}
-        </p>
-        <Button type="submit" className="w-full">Guardar</Button>
-      </form>
-    </Modal>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/50">
+      <button type="button" className="h-full flex-1" aria-label="Cerrar" onClick={onClose} />
+      <aside className="h-full w-full max-w-md overflow-y-auto border-l border-[#253047] bg-[#0B111C] p-5 text-sm">
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold text-[#F8FAFC]">{editing ? "Editar cuenta" : "Agregar cuenta"}</h2>
+          <button type="button" className="text-[#94A3B8]" onClick={onClose} aria-label="Cerrar">
+            <CloseIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <form
+          key={editing?.id ?? "new"}
+          className="space-y-3"
+          action={async (formData) => {
+            if (editing) formData.set("id", editing.id);
+            if (kind === "full") {
+              formData.set("maxProfiles", "1");
+              formData.set("saleKind", "full");
+            } else {
+              const max = Number(formData.get("maxProfiles") || 5);
+              formData.set("maxProfiles", String(Math.max(2, max)));
+              formData.set("saleKind", "profiles");
+            }
+            const result = await upsertStreamingAccountAction(formData);
+            onMessage(result.ok ? "Cuenta guardada." : result.error ?? "No se pudo guardar");
+            if (result.ok) {
+              onClose();
+              router.refresh();
+            }
+          }}
+        >
+          <p className="text-xs font-semibold tracking-[0.16em] text-[#94A3B8] uppercase">Información de la cuenta</p>
+          <div>
+            <p className="text-xs text-[#94A3B8]">Tipo de cuenta</p>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setKind("profiles")}
+                className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold ${
+                  kind === "profiles"
+                    ? "border-[#8B5CF6] bg-[#8B5CF6]/15 text-[#F8FAFC]"
+                    : "border-[#253047] text-[#94A3B8]"
+                }`}
+              >
+                Cuenta compartida
+                <span className="mt-0.5 block text-[10px] font-normal text-[#94A3B8]">Varios espacios (P1, P2…)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setKind("full")}
+                className={`rounded-xl border px-3 py-2.5 text-left text-xs font-semibold ${
+                  kind === "full"
+                    ? "border-[#8B5CF6] bg-[#8B5CF6]/15 text-[#F8FAFC]"
+                    : "border-[#253047] text-[#94A3B8]"
+                }`}
+              >
+                Cuenta completa
+                <span className="mt-0.5 block text-[10px] font-normal text-[#94A3B8]">Un solo cliente</span>
+              </button>
+            </div>
+          </div>
+          <label className="block text-xs text-[#94A3B8]">
+            Plataforma
+            <select
+              name="platformId"
+              value={platformId}
+              onChange={(event) => setPlatformId(event.target.value)}
+              className="ui-field mt-1"
+            >
+              {platforms.filter((item) => item.available).map((item) => (
+                <option key={item.id} value={item.id}>{platformDisplayName(item)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs text-[#94A3B8]">
+            Plan / etiqueta
+            <input
+              name="label"
+              defaultValue={editing?.label ?? ""}
+              placeholder="Premium, Estándar, compartida..."
+              className="ui-field mt-1"
+            />
+          </label>
+          <label className="block text-xs text-[#94A3B8]">
+            Correo o usuario
+            <input name="email" defaultValue={editing?.email} placeholder="correo@cuenta.com" className="ui-field mt-1" />
+          </label>
+          <label className="block text-xs text-[#94A3B8]">
+            Clave de la cuenta
+            <input name="password" defaultValue={editing?.password} placeholder="Clave" className="ui-field mt-1" />
+          </label>
+          {kind === "full" ? (
+            <input type="hidden" name="maxProfiles" value="1" />
+          ) : (
+            <label className="block text-xs text-[#94A3B8]">
+              Perfiles máximos
+              <input name="maxProfiles" type="number" min={2} max={8} defaultValue={editing && editing.maxProfiles > 1 ? editing.maxProfiles : 5} className="ui-field mt-1" />
+            </label>
+          )}
+          <label className="block text-xs text-[#94A3B8]">
+            Vencimiento
+            <ExpiryDateInput
+              name="expiresAt"
+              iso={expiresAt}
+              onCommit={setExpiresAt}
+              className="ui-field mt-1 w-full pr-8"
+            />
+          </label>
+          <p className={`text-xs font-semibold ${healthClass[health.tone]}`}>
+            {days === null ? "Días restantes: —" : `Días restantes: ${days}`}
+          </p>
+          <select name="status" defaultValue={editing?.status ?? "available"} className="ui-field">
+            <option value="available">Disponible</option>
+            <option value="inactive">Inactiva</option>
+            <option value="full">Llena</option>
+          </select>
+
+          {kind === "full" ? (
+            <div className="rounded-xl border border-[#253047] p-3">
+              <p className="text-xs font-semibold tracking-[0.16em] text-[#94A3B8] uppercase">Vendedor / revendedor</p>
+              <label className="mt-2 block text-xs text-[#94A3B8]">
+                Nombre
+                <input name="resellerName" defaultValue={editing?.resellerName} placeholder="Nombre" className="ui-field mt-1" />
+              </label>
+              <label className="mt-2 block text-xs text-[#94A3B8]">
+                WhatsApp
+                <WhatsAppInput name="resellerWhatsapp" defaultValue={editing?.resellerWhatsapp ?? ""} />
+              </label>
+            </div>
+          ) : null}
+
+          <div className="rounded-xl border border-[#253047] p-3">
+            <p className="text-xs font-semibold tracking-[0.16em] text-[#94A3B8] uppercase">Tienda</p>
+            <p className="mt-1 text-[11px] text-[#64748B]">Asocia esta cuenta a un producto ya publicado. No crea cuentas falsas.</p>
+            {offers.length ? (
+              <label className="mt-2 block text-xs text-[#94A3B8]">
+                Producto en tienda
+                <select name="linkProductName" defaultValue={linkedName} className="ui-field mt-1">
+                  <option value="">Sin asociar</option>
+                  {offers.map((offer) => (
+                    <option key={offer.id} value={offer.name}>
+                      {offer.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <>
+                <input type="hidden" name="linkProductName" value="" />
+                <p className="mt-2 text-xs text-[#F59E0B]">No hay producto de esta plataforma. Publícalo en Productos y luego asócialo aquí.</p>
+              </>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-[#253047] p-3">
+            <p className="text-xs font-semibold tracking-[0.16em] text-[#94A3B8] uppercase">Datos del proveedor (opcional)</p>
+            <p className="mt-1 text-[11px] text-[#64748B]">Solo tú lo ves. El cliente nunca ve esta información.</p>
+            <label className="mt-3 block text-xs text-[#94A3B8]">
+              Proveedor
+              <input name="supplierName" defaultValue={editing?.supplierName} placeholder="Nombre" className="ui-field mt-1" />
+            </label>
+            <label className="mt-2 block text-xs text-[#94A3B8]">
+              Contacto
+              <input name="supplierContact" defaultValue={editing?.supplierContact} placeholder="WhatsApp / Telegram" className="ui-field mt-1" />
+            </label>
+            <label className="mt-2 block text-xs text-[#94A3B8]">
+              Vencimiento del proveedor
+              <ExpiryDateInput
+                name="supplierExpiresAt"
+                iso={supplierExpiresAt}
+                onCommit={setSupplierExpiresAt}
+                className="ui-field mt-1 w-full pr-8"
+              />
+            </label>
+            <label className="mt-2 block text-xs text-[#94A3B8]">
+              Costo de la cuenta
+              <input name="supplierCost" type="number" step="0.01" defaultValue={editing?.supplierCost || ""} placeholder="0.00" className="ui-field mt-1" />
+            </label>
+            <label className="mt-2 block text-xs text-[#94A3B8]">
+              Nota
+              <textarea name="supplierNote" defaultValue={editing?.supplierNote} rows={2} className="ui-field mt-1" />
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button type="submit" className="flex-1">
+              Guardar cuenta
+            </Button>
+          </div>
+        </form>
+      </aside>
+    </div>
   );
 }
 
-function AssignModal({
+export function AssignModal({
   row,
   slot,
   customers,
@@ -715,7 +1274,7 @@ function AssignModal({
         {createNew ? (
           <>
             <input name="name" placeholder="Nombre" className="ui-field" required />
-            <input name="whatsapp" placeholder="WhatsApp" className="ui-field" required />
+            <WhatsAppInput name="whatsapp" required />
             <input name="password" type="password" placeholder="Clave de acceso (opcional, mín. 6)" className="ui-field" />
           </>
         ) : (
@@ -723,11 +1282,11 @@ function AssignModal({
             <select name="customerId" value={customerId} onChange={(event) => setCustomerId(event.target.value)} className="ui-field">
               {customers.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} · {item.whatsapp}
+                  {item.name} · {whatsappParaMostrar(item.whatsapp)}
                 </option>
               ))}
             </select>
-            <input readOnly value={selected?.whatsapp ?? ""} className="ui-field opacity-70" />
+            <input readOnly value={selected ? whatsappParaMostrar(selected.whatsapp) : ""} className="ui-field opacity-70" />
           </>
         )}
         <select name="productId" defaultValue={product?.id} className="ui-field" required>
@@ -755,10 +1314,11 @@ function AssignModal({
   );
 }
 
-function ProfileDrawer({
+export function ProfileDrawer({
   row,
   slot,
   platformName,
+  plantillas,
   onClose,
   onMessage,
   onEdit,
@@ -766,6 +1326,7 @@ function ProfileDrawer({
   row: InventoryAccountRow;
   slot: ProfileSlot;
   platformName: string;
+  plantillas?: PlantillasWhatsapp;
   onClose: () => void;
   onMessage: (value: string | null) => void;
   onEdit: () => void;
@@ -788,7 +1349,7 @@ function ProfileDrawer({
         </div>
         <dl className="space-y-2 text-[13px]">
           <Info label="Cliente" value={customer?.name ?? "—"} />
-          <Info label="WhatsApp" value={customer?.whatsapp ?? "—"} />
+          <Info label="WhatsApp" value={customer?.whatsapp ? whatsappParaMostrar(customer.whatsapp) : "—"} />
           <Info label="Correo de la cuenta" value={row.account.email} />
           <Info label="Clave" value={row.account.password || "—"} />
           <Info label="Perfil" value={service.accessProfile || `P${slot.index}`} />
@@ -822,7 +1383,13 @@ function ProfileDrawer({
           {customer?.whatsapp ? (
             <a
               className="rounded-xl border border-[#253047] px-3 py-2 text-center text-xs"
-              href={waLink(customer.whatsapp, renewalMessage(customer.name, platformName, formatDate(service.endDate)))}
+              href={waLink(
+                customer.whatsapp,
+                renewalMessage(customer.name, platformName, formatDate(service.endDate), {
+                  dias: daysRemaining(service.endDate),
+                  plantillas,
+                }),
+              )}
               target="_blank"
               rel="noreferrer"
             >

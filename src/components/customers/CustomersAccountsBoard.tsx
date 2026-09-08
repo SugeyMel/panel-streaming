@@ -27,6 +27,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
 import { PlatformLogo } from "@/components/ui/PlatformLogo";
 import { SearchBar } from "@/components/ui/SearchBar";
 import {
@@ -39,6 +40,7 @@ import {
   type ProfileSlot,
 } from "@/lib/inventory-matrix";
 import { platformDisplayName } from "@/lib/platform-logos";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import type { Customer, Platform, Product, StreamingAccount, Subscription } from "@/lib/types";
 
 const PAGE_SIZE = 8;
@@ -133,7 +135,13 @@ export function CustomersAccountsBoard({
           row.account.password,
           row.account.supplierName,
           row.account.label,
-          ...row.slots.flatMap((slot) => [slot.customer?.name, slot.customer?.whatsapp, slot.service?.accessProfile, slot.service?.accessPassword]),
+          ...row.slots.flatMap((slot) => [
+            slot.customer?.name,
+            slot.customer?.whatsapp,
+            slot.customer ? whatsappParaMostrar(slot.customer.whatsapp) : "",
+            slot.service?.accessProfile,
+            slot.service?.accessPassword,
+          ]),
         ]
           .join(" ")
           .toLowerCase()
@@ -583,7 +591,7 @@ export function CustomersAccountsBoard({
           }}
         >
           <input name="name" placeholder="Nombre" className="ui-field" required />
-          <input name="whatsapp" placeholder="Celular (será su usuario)" className="ui-field" required />
+          <WhatsAppInput name="whatsapp" required />
           <input name="email" type="email" placeholder="Correo (opcional)" className="ui-field" />
           <input name="password" type="password" placeholder="Clave del cliente (mín. 6)" className="ui-field" />
           <Button type="submit" className="w-full">

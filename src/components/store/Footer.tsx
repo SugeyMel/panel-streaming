@@ -1,6 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export function Footer() {
+  const pathname = usePathname();
+  if (pathname.startsWith("/tienda/")) return null;
+
   return (
     <footer className="mt-auto border-t border-[#253047] bg-[#070B12]">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-8 text-sm text-[#94A3B8] sm:flex-row sm:items-center sm:justify-between sm:px-6">

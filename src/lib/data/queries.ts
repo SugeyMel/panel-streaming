@@ -2,10 +2,32 @@ import { customers, orders, platforms, products, sellers, subscriptions } from "
 import { getAppSession } from "@/lib/auth/get-session";
 import { mapCustomer, mapOrder, mapPlatform, mapProduct, mapSeller, mapService } from "@/lib/db/map";
 import { DEMO_CUSTOMER_ID, DEMO_SELLER_ID } from "@/lib/session";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { platformDisplayName } from "@/lib/platform-logos";
 import { type CustomerRow } from "@/lib/selectors";
-import type { Customer, Order, Platform, Product, Seller, StreamingAccount, Subscription } from "@/lib/types";
+import type {
+  Customer,
+  Order,
+  Platform,
+  Product,
+  Seller,
+  StreamingAccount,
+  Subscription,
+  Supplier,
+  WholesaleCatalogProduct,
+  WholesaleSale,
+  WholesaleStockEntry,
+} from "@/lib/types";
+import {
+  isMissingRelation,
+  mapWholesaleCatalogProduct,
+  mapWholesaleSale,
+  mapWholesaleStockEntry,
+} from "@/lib/wholesale";
+import type { HomeImagesMap } from "@/lib/home-images";
+import { isHomeImageSlot } from "@/lib/home-images";
+import type { PlantillasWhatsapp, TipoPlantillaMensaje } from "@/lib/whatsapp";
 
 export async function liveClient() {
   if (!isSupabaseConfigured()) return null;
@@ -72,33 +94,89 @@ export async function loadOrders(filter?: { sellerId?: string | null; customerId
   if (filter?.sellerId) query = query.eq("seller_id", filter.sellerId);
   if (filter?.customerId) query = query.eq("customer_id", filter.customerId);
   const { data, error } = await query;
-  if (error) {
+  const rows = error ? (await (async () => {
     let fallback = supabase.from("orders").select("*").order("created_at", { ascending: false });
     if (filter?.sellerId) fallback = fallback.eq("seller_id", filter.sellerId);
     if (filter?.customerId) fallback = fallback.eq("customer_id", filter.customerId);
     const retry = await fallback;
     if (retry.error) throw retry.error;
-    return (retry.data ?? []).map((row) => {
-      const record = row as Record<string, unknown>;
-      const mapped = mapOrder(record);
-      return mapped;
-    });
-  }
-  return (data ?? []).map((row) => {
+    return retry.data ?? [];
+  })()) : (data ?? []);
+
+  const list = rows.map((row) => {
     const record = row as Record<string, unknown> & {
-      customers?: { whatsapp?: string; name?: string };
-      products?: { platform_id?: string; name?: string };
-      sellers?: { name?: string };
+      customers?: { whatsapp?: string; name?: string } | { whatsapp?: string; name?: string }[];
+      products?: { platform_id?: string; name?: string } | { platform_id?: string; name?: string }[];
+      sellers?: { name?: string } | { name?: string }[];
     };
+    const customer = Array.isArray(record.customers) ? record.customers[0] : record.customers;
+    const product = Array.isArray(record.products) ? record.products[0] : record.products;
+    const seller = Array.isArray(record.sellers) ? record.sellers[0] : record.sellers;
     const mapped = mapOrder(record, {
-      whatsapp: record.customers?.whatsapp,
-      platformId: record.products?.platform_id,
+      whatsapp: customer?.whatsapp,
+      platformId: product?.platform_id,
     });
     return {
       ...mapped,
-      sellerName: record.sellers?.name,
-      customerName: record.customers?.name,
-      platformName: record.products?.name,
+      sellerName: seller?.name,
+      customerName: customer?.name,
+      platformName: product?.name,
+    };
+  });
+
+  return hydrateOrderPlatforms(supabase, list);
+}
+
+async function hydrateOrderPlatforms(
+  supabase: NonNullable<Awaited<ReturnType<typeof liveClient>>>,
+  list: Order[],
+): Promise<Order[]> {
+  if (!list.length) return list;
+  const productIds = [...new Set(list.map((item) => item.productId).filter(Boolean))];
+  const orderIds = list.map((item) => item.id);
+  const [{ data: userProductRows }, { data: platformRows }, { data: serviceRows }] = await Promise.all([
+    productIds.length
+      ? supabase.from("products").select("id, platform_id, name, duration_days").in("id", productIds)
+      : Promise.resolve({ data: [] as { id: string; platform_id: string; name: string; duration_days?: number }[] }),
+    supabase.from("platforms").select("id, name, slug"),
+    supabase.from("services").select("order_id, platform_id").in("order_id", orderIds),
+  ]);
+  let productRows = userProductRows ?? [];
+  if (productIds.length && productRows.length < productIds.length) {
+    const admin = createServiceClient();
+    if (admin) {
+      const { data } = await admin
+        .from("products")
+        .select("id, platform_id, name, duration_days")
+        .in("id", productIds);
+      if (data?.length) productRows = data;
+    }
+  }
+  const productById = new Map((productRows ?? []).map((row) => [String(row.id), row]));
+  const platformById = new Map((platformRows ?? []).map((row) => [String(row.id), row]));
+  const platformByOrder = new Map(
+    (serviceRows ?? [])
+      .filter((row) => row.order_id)
+      .map((row) => [String(row.order_id), String(row.platform_id)]),
+  );
+
+  return list.map((order) => {
+    const product = productById.get(order.productId);
+    const platformId =
+      order.platformId ||
+      (product?.platform_id ? String(product.platform_id) : "") ||
+      platformByOrder.get(order.id) ||
+      "";
+    const platform = platformId ? platformById.get(platformId) : undefined;
+    const label = platformDisplayName(
+      platform ? { id: String(platform.id), name: String(platform.name), slug: String(platform.slug ?? "") } : order.platformName,
+    );
+    const days = product?.duration_days ? Number(product.duration_days) : 0;
+    return {
+      ...order,
+      platformId,
+      platformName: label || (platform ? String(platform.name) : "") || order.platformName,
+      planName: product?.name || (days ? `${days} días` : order.planName),
     };
   });
 }
@@ -154,6 +232,15 @@ export async function loadStreamingAccounts(sellerId: string | null): Promise<St
       maxProfiles: Number(row.max_profiles ?? 5),
       status: status === "full" || status === "inactive" ? status : "available",
       usedProfiles: occupied.length,
+      expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
+      supplierName: String(row.supplier_name ?? ""),
+      supplierContact: String(row.supplier_contact ?? ""),
+      supplierCost: Number(row.supplier_cost ?? 0),
+      supplierNote: String(row.supplier_note ?? ""),
+      supplierExpiresAt: row.supplier_expires_at ? String(row.supplier_expires_at).slice(0, 10) : null,
+      saleKind: String(row.sale_kind) === "full" ? "full" : "profiles",
+      resellerName: String(row.reseller_name ?? ""),
+      resellerWhatsapp: String(row.reseller_whatsapp ?? ""),
     };
   });
 }
@@ -206,7 +293,7 @@ export async function loadExpenses(sellerId?: string | null) {
   }));
 }
 
-export async function loadSuppliers() {
+export async function loadSuppliers(): Promise<Supplier[]> {
   const supabase = await liveClient();
   if (!supabase) {
     return [
@@ -221,15 +308,66 @@ export async function loadSuppliers() {
   }
   const { data, error } = await supabase.from("suppliers").select("*").order("name");
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []).map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      id: String(record.id),
+      name: String(record.name ?? ""),
+      contact: record.contact ? String(record.contact) : null,
+      status: String(record.status ?? "active"),
+      notes: record.notes ? String(record.notes) : null,
+    };
+  });
 }
 
-export async function loadSupplierProducts() {
+export async function loadWholesaleSales(): Promise<WholesaleSale[]> {
   const supabase = await liveClient();
   if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("wholesale_sales")
+    .select("*")
+    .order("purchased_at", { ascending: false });
+  if (error) {
+    if (isMissingRelation(error.message)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => mapWholesaleSale(row as Record<string, unknown>));
+}
+
+export async function loadWholesaleStockEntries(): Promise<WholesaleStockEntry[]> {
+  const supabase = await liveClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("wholesale_stock_entries")
+    .select("*")
+    .order("received_at", { ascending: false });
+  if (error) {
+    if (isMissingRelation(error.message)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => mapWholesaleStockEntry(row as Record<string, unknown>));
+}
+
+export async function loadSupplierProducts(): Promise<WholesaleCatalogProduct[]> {
+  const supabase = await liveClient();
+  if (!supabase) return [];
+  const [entries, sales] = await Promise.all([loadWholesaleStockEntries(), loadWholesaleSales()]);
   const { data, error } = await supabase.from("supplier_products").select("*").order("name");
-  if (error) throw error;
-  return data ?? [];
+  if (error) {
+    const missingColumn = /column .* does not exist|image_path/i.test(error.message);
+    if (missingColumn) {
+      const retry = await supabase
+        .from("supplier_products")
+        .select("id, supplier_id, platform_id, name, wholesale_price, status, notes")
+        .order("name");
+      if (retry.error) throw retry.error;
+      return (retry.data ?? []).map((row) =>
+        mapWholesaleCatalogProduct(row as Record<string, unknown>, entries, sales),
+      );
+    }
+    throw error;
+  }
+  return (data ?? []).map((row) => mapWholesaleCatalogProduct(row as Record<string, unknown>, entries, sales));
 }
 
 export async function loadCustomerById(id: string | null) {
@@ -250,6 +388,66 @@ export async function loadSellerById(id: string | null) {
   return data ? mapSeller(data as Record<string, unknown>) : null;
 }
 
+const TIPOS_PLANTILLA = new Set<TipoPlantillaMensaje>([
+  "recordatorio_vencimiento",
+  "oferta_renovacion",
+  "entrega_pedido",
+  "bienvenida",
+]);
+
+export async function loadMessageTemplates(sellerId: string | null): Promise<PlantillasWhatsapp> {
+  if (!sellerId) return {};
+  const supabase = await liveClient();
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from("message_templates")
+    .select("tipo, cuerpo, cuerpo_vencido, activo")
+    .eq("seller_id", sellerId);
+  if (error) return {};
+  const plantillas: PlantillasWhatsapp = {};
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const tipo = String(record.tipo) as TipoPlantillaMensaje;
+    if (!TIPOS_PLANTILLA.has(tipo)) continue;
+    plantillas[tipo] = {
+      tipo,
+      cuerpo: String(record.cuerpo ?? ""),
+      cuerpoVencido: record.cuerpo_vencido == null || String(record.cuerpo_vencido).trim() === ""
+        ? null
+        : String(record.cuerpo_vencido),
+      activo: record.activo !== false,
+    };
+  }
+  return plantillas;
+}
+
+export async function loadHomeImages(sellerId: string | null): Promise<HomeImagesMap> {
+  if (!sellerId) return {};
+  const supabase = await liveClient();
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from("home_images")
+    .select("slot, storage_path, updated_at")
+    .eq("seller_id", sellerId);
+  if (error) return {};
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") ?? "";
+  const images: HomeImagesMap = {};
+  for (const row of data ?? []) {
+    const record = row as Record<string, unknown>;
+    const slot = String(record.slot);
+    if (!isHomeImageSlot(slot)) continue;
+    const storagePath = String(record.storage_path ?? "");
+    if (!storagePath || !base) continue;
+    const version = String(record.updated_at ?? storagePath);
+    images[slot] = {
+      slot,
+      storagePath,
+      url: `${base}/storage/v1/object/public/seller-logos/${storagePath.replace(/^\/+/, "")}?v=${encodeURIComponent(version)}`,
+    };
+  }
+  return images;
+}
+
 export async function loadPaymentMethods(sellerId: string | null) {
   if (!sellerId) return [];
   const supabase = await liveClient();
@@ -260,13 +458,31 @@ export async function loadPaymentMethods(sellerId: string | null) {
     .eq("seller_id", sellerId)
     .order("created_at");
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    id: String(row.id),
-    sellerId: String(row.seller_id),
-    kind: String(row.kind) as "yape" | "plin" | "bank",
-    holderName: String(row.holder_name),
-    accountNumber: String(row.account_number),
-  }));
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") ?? "";
+  return (data ?? []).map((row) => {
+    const record = row as Record<string, unknown>;
+    const qrPath = record.qr_path ? String(record.qr_path) : null;
+    const logoPath = record.logo_path ? String(record.logo_path) : null;
+    return {
+      id: String(record.id),
+      sellerId: String(record.seller_id),
+      kind: String(record.kind) as "yape" | "plin" | "bank",
+      holderName: String(record.holder_name),
+      accountNumber: String(record.account_number),
+      qrPath,
+      qrUrl:
+        qrPath && base
+          ? `${base}/storage/v1/object/public/seller-qr/${qrPath.replace(/^\/+/, "")}?v=${encodeURIComponent(String(record.updated_at ?? qrPath))}`
+          : null,
+      logoPath,
+      logoUrl:
+        logoPath && base
+          ? `${base}/storage/v1/object/public/seller-logos/${logoPath.replace(/^\/+/, "")}?v=${encodeURIComponent(String(record.updated_at ?? logoPath))}`
+          : null,
+      isPrimary: record.is_primary === true,
+      isActive: record.is_active !== false,
+    };
+  }).sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
 }
 
 export async function loadOrderReceiptUrl(orderId: string) {
@@ -345,6 +561,32 @@ export async function customerScope() {
 
 export { type CustomerRow };
 
+export type StoreOfferLink = {
+  id: string;
+  sellerId: string;
+  platformId: string;
+  productName: string;
+  accountId: string;
+};
+
+export async function loadStoreOfferLinks(sellerId: string | null): Promise<StoreOfferLink[]> {
+  if (!sellerId) return [];
+  const supabase = await liveClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("store_offer_accounts")
+    .select("id, seller_id, platform_id, product_name, account_id")
+    .eq("seller_id", sellerId);
+  if (error) return [];
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    sellerId: String(row.seller_id),
+    platformId: String(row.platform_id),
+    productName: String(row.product_name),
+    accountId: String(row.account_id),
+  }));
+}
+
 export async function loadStorefront(slug: string) {
   const supabase = await liveClient();
   if (!supabase) {
@@ -376,6 +618,14 @@ export async function loadStorefront(slug: string) {
     yape_number: payload.seller.yapeNumber,
     plin_holder: payload.seller.plinHolder,
     plin_number: payload.seller.plinNumber,
+    logo_path: payload.seller.logoPath,
+    store_message: payload.seller.storeMessage,
+    store_banner_enabled: payload.seller.storeBannerEnabled,
+    store_banner_kicker: payload.seller.storeBannerKicker,
+    store_banner_title: payload.seller.storeBannerTitle,
+    store_banner_accent: payload.seller.storeBannerAccent,
+    store_banner_description: payload.seller.storeBannerDescription,
+    store_banner_path: payload.seller.storeBannerPath,
   });
   const list = (payload.products ?? []).map((row) =>
     mapProduct(
@@ -390,6 +640,9 @@ export async function loadStorefront(slug: string) {
         stock: row.stock,
         status: "active",
         cost_price: 0,
+        compare_at_price: row.compareAtPrice,
+        on_offer: row.onOffer,
+        inventoryLinked: row.inventoryLinked,
       },
       true,
     ),

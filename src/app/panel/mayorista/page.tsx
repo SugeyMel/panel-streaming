@@ -14,10 +14,10 @@ export default async function SellerWholesalePage() {
       />
       <Card>
         <DataTable
-          rows={products as { id: string; name: string; wholesale_price: number; status: string }[]}
+          rows={products}
           columns={[
             { key: "name", header: "Producto", render: (row) => row.name },
-            { key: "price", header: "Precio mayorista", render: (row) => formatCurrency(Number(row.wholesale_price)) },
+            { key: "price", header: "Precio mayorista", render: (row) => formatCurrency(row.wholesalePrice) },
             { key: "status", header: "Estado", render: (row) => row.status },
           ]}
         />

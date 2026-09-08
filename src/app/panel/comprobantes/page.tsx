@@ -12,7 +12,7 @@ export default async function SellerReceiptsPage() {
     <div>
       <PageHeader title="Comprobantes" description="Aquí te llegan los vouchers. Pulsa Ver, mira la foto y aprueba o rechaza." />
       <Card>
-        <OrdersTable orders={pending} actionHref={(order) => `/panel/pedidos/${order.id}`} />
+        <OrdersTable orders={pending} actionHref="/panel/pedidos/{id}" />
       </Card>
     </div>
   );

@@ -9,7 +9,9 @@ import { Filters } from "@/components/ui/Filters";
 import { Modal } from "@/components/ui/Modal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchBar } from "@/components/ui/SearchBar";
+import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
 import { waLink, supportMessage } from "@/lib/whatsapp";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import type { CustomerRow } from "@/lib/selectors";
 import type { Customer } from "@/lib/types";
 
@@ -36,7 +38,7 @@ export function CustomersManager({
 
   const filtered = useMemo(() => {
     return rows.filter((row) => {
-      const matchQuery = `${row.name} ${row.whatsapp} ${row.email}`.toLowerCase().includes(query.toLowerCase());
+      const matchQuery = `${row.name} ${whatsappParaMostrar(row.whatsapp)} ${row.whatsapp} ${row.email}`.toLowerCase().includes(query.toLowerCase());
       if (!matchQuery) return false;
       if (filter === "activos") return row.activeServices > 0;
       if (filter === "por_vencer") return Boolean(row.nextExpiry) && row.activeServices > 0;
@@ -79,7 +81,7 @@ export function CustomersManager({
           }}
         >
           <input name="name" defaultValue={editing?.name} placeholder="Nombre" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
-          <input name="whatsapp" defaultValue={editing?.whatsapp} placeholder="Celular (será su usuario)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          <WhatsAppInput name="whatsapp" defaultValue={editing?.whatsapp} required />
           <input name="email" type="email" defaultValue={editing?.email} placeholder="Correo (opcional, solo contacto)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
           {editing ? null : (
             <input

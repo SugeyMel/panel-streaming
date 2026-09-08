@@ -1,11 +1,43 @@
 import type { ReactNode } from "react";
 import { DashboardShell } from "@/components/layout/DashboardShell";
-import { getAppSession } from "@/lib/auth/get-session";
+import { customerScope, loadCustomerById, loadOrders, loadPlatforms, loadSellerById } from "@/lib/data/queries";
+import { formatDateTime } from "@/lib/format";
+import { orderPlatformLabel } from "@/lib/platform-logos";
+
+export const dynamic = "force-dynamic";
 
 export default async function CustomerLayout({ children }: { children: ReactNode }) {
-  const session = await getAppSession();
+  const { session, customerId } = await customerScope();
+  const [orders, platforms, customer] = await Promise.all([
+    loadOrders({ customerId }),
+    loadPlatforms(),
+    loadCustomerById(customerId),
+  ]);
+  const seller = await loadSellerById(customer?.sellerId ?? null);
+  const customerAlerts = orders
+    .filter((item) => item.status === "entregado")
+    .map((item) => {
+      const platform = orderPlatformLabel(item, platforms);
+      return {
+        id: item.id,
+        href: "/cliente/acceso",
+        title: `${platform} · ${item.code}`,
+        subtitle: item.deliveredAt
+          ? `Entregado ${formatDateTime(item.deliveredAt)}`
+          : item.deliveryNote || "Ya puedes ver el acceso",
+      };
+    });
+
   return (
-    <DashboardShell title="Inicio" role="Cliente" variant="customer" userName={session.name}>
+    <DashboardShell
+      title="Inicio"
+      role="Cliente"
+      variant="customer"
+      userName={session.name}
+      customerAlerts={customerAlerts}
+      brandLogoUrl={seller?.logoUrl}
+      brandTitle={seller?.businessName}
+    >
       {children}
     </DashboardShell>
   );

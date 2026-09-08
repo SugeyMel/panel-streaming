@@ -2,48 +2,71 @@
 
 import Link from "next/link";
 
-const LOGO_SRC = "/branding/logo-panel-streaming.png";
+const INFINITY_SRC = "/branding/logo-infinito-mark.png";
 
 export function AppBrand({
   compact = false,
   href = "/",
   role,
   size = "header",
+  logoSrc,
+  title,
 }: {
   compact?: boolean;
   href?: string;
   role?: string;
   size?: "header" | "sidebar";
+  logoSrc?: string | null;
+  title?: string;
 }) {
   const showRole = Boolean(role) && !compact;
+  const mark = logoSrc || INFINITY_SRC;
+  const name = title?.trim() || "Panel Streaming";
+  const markClass = logoSrc
+    ? compact
+      ? "h-9 w-9 rounded-lg sm:h-10 sm:w-10"
+      : size === "sidebar"
+        ? "h-11 w-11 rounded-xl"
+        : "h-11 w-11 rounded-xl md:h-12 md:w-12"
+    : compact
+      ? "h-9 w-auto sm:h-10"
+      : size === "sidebar"
+        ? "h-11 w-auto"
+        : "h-11 w-auto md:h-12";
+  const titleClass = compact
+    ? "text-[15px] font-bold tracking-tight text-white sm:text-base"
+    : size === "sidebar"
+      ? "text-lg font-bold tracking-tight text-white"
+      : "text-base font-bold tracking-tight text-white md:text-lg";
 
   return (
     <Link
       href={href}
       className={
         showRole
-          ? "flex min-w-0 flex-col items-start justify-center gap-1"
+          ? "flex min-w-0 items-center"
           : "inline-flex min-w-0 items-center"
       }
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={LOGO_SRC}
-        alt="Panel Streaming"
-        className={
-          compact
-            ? "h-11 w-auto max-w-full object-contain object-left"
-            : size === "sidebar"
-              ? "h-[52px] w-auto max-w-full object-contain object-left"
-              : "h-12 w-auto max-w-full object-contain object-left md:h-[58px] lg:h-16"
-        }
-        suppressHydrationWarning
-      />
-      {showRole ? (
-        <span className="text-[10px] font-semibold tracking-[0.32em] text-[#38BDF8] uppercase">
-          {role}
-        </span>
-      ) : null}
+      <span
+        className={`inline-flex min-w-0 items-center ${
+          size === "sidebar" && !compact ? "gap-[11px]" : "gap-4"
+        }`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={mark}
+          alt=""
+          className={`shrink-0 object-contain object-left ${logoSrc ? "" : "-translate-y-[17%]"} ${markClass}`}
+          suppressHydrationWarning
+        />
+        <span className={`min-w-0 truncate ${titleClass}`}>{name}</span>
+        {showRole ? (
+          <span className="ml-1 shrink-0 rounded-full border border-[#253047] bg-[#172033] px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#C4B5FD] uppercase">
+            {role}
+          </span>
+        ) : null}
+      </span>
     </Link>
   );
 }
@@ -53,6 +76,8 @@ export function Logo(props: {
   href?: string;
   role?: string;
   size?: "header" | "sidebar";
+  logoSrc?: string | null;
+  title?: string;
 }) {
   return <AppBrand {...props} />;
 }

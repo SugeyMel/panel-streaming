@@ -1,11 +1,11 @@
+import { whatsappParaGuardar, whatsappParaMostrar } from "@/lib/clientes";
+
 const PHONE_AUTH_DOMAIN = "wa.panel.local";
 
 export function normalizePhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("51") && digits.length >= 11) return digits;
-  if (digits.length === 9 && digits.startsWith("9")) return `51${digits}`;
-  return digits;
+  const stored = whatsappParaGuardar(value);
+  if (stored) return stored;
+  return whatsappParaMostrar(value);
 }
 
 export function isPhoneLogin(value: string) {

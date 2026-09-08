@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { placeRenewalCheckoutAction } from "@/app/actions/business";
-import { CheckIcon, CopyIcon, UploadIcon } from "@/components/icons";
+import { CheckIcon, UploadIcon } from "@/components/icons";
+import { SellerPayDetails } from "@/components/payments/SellerPayDetails";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PlatformMark } from "@/components/ui/PlatformMark";
@@ -11,8 +12,6 @@ import { Badge } from "@/components/ui/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { renewalOptionsForPlatform } from "@/lib/selectors";
 import type { Platform, Product, SellerPaymentMethod, Subscription } from "@/lib/types";
-
-const kindLabel = { yape: "Yape", plin: "Plin", bank: "Cuenta" } as const;
 
 type Step = "plan" | "pay" | "voucher" | "done";
 
@@ -51,6 +50,9 @@ export function RenewalCheckout({
       active: true,
       stock: 0,
       soldOut: false,
+      compareAtPrice: null,
+      onOffer: false,
+      inventoryLinked: false,
     } satisfies Product;
   }, [current, platform?.name, service]);
   const options = useMemo(() => {
@@ -74,12 +76,11 @@ export function RenewalCheckout({
   const defaultProductId = options.find((item) => item.product)?.product?.id ?? service.productId;
   const [step, setStep] = useState<Step>("plan");
   const [productId, setProductId] = useState(defaultProductId);
-  const [paymentMethodId, setPaymentMethodId] = useState(methods[0]?.id ?? "");
+  const [paymentMethodId, setPaymentMethodId] = useState(methods.find((item) => item.isActive !== false)?.id ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [copied, setCopied] = useState(false);
   const selected =
     products.find((item) => item.id === productId) ??
     options.find((item) => item.product?.id === productId)?.product ??
@@ -234,52 +235,7 @@ export function RenewalCheckout({
             </div>
           </Card>
           <p className="text-sm text-[#94A3B8]">Elige un medio de pago</p>
-          {methods.length === 0 ? (
-            <p className="text-sm text-[#EF4444]">Tu vendedor aún no cargó medios de pago.</p>
-          ) : (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {methods.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setPaymentMethodId(item.id)}
-                  className={`min-w-[4.5rem] rounded-[16px] border px-3 py-3 text-xs font-semibold ${
-                    paymentMethodId === item.id
-                      ? "border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#F8FAFC]"
-                      : "border-[#253047] bg-[#111827] text-[#94A3B8]"
-                  }`}
-                >
-                  {kindLabel[item.kind]}
-                </button>
-              ))}
-            </div>
-          )}
-          {pay ? (
-            <Card className="space-y-3 p-5">
-              <p className="text-xs font-semibold tracking-[0.16em] text-[#8B5CF6] uppercase">
-                {kindLabel[pay.kind]}
-              </p>
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-2xl font-bold tracking-tight text-[#F8FAFC]">{pay.accountNumber}</p>
-                <button
-                  type="button"
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#253047] text-[#38BDF8]"
-                  aria-label="Copiar"
-                  onClick={async () => {
-                    await navigator.clipboard.writeText(pay.accountNumber);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  }}
-                >
-                  <CopyIcon className="h-4 w-4" />
-                </button>
-              </div>
-              <p className="text-sm text-[#94A3B8]">
-                A nombre de <span className="text-[#F8FAFC]">{pay.holderName}</span>
-              </p>
-              {copied ? <p className="text-xs text-[#22C55E]">Copiado</p> : null}
-            </Card>
-          ) : null}
+          <SellerPayDetails methods={methods} selectedId={paymentMethodId} onSelect={setPaymentMethodId} />
           {error ? <p className="text-sm text-[#EF4444]">{error}</p> : null}
           <div className="sticky-app-cta">
             <Button type="button" className="w-full min-h-12" disabled={!pay} onClick={() => setStep("voucher")}>

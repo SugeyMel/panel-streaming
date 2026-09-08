@@ -27,6 +27,12 @@ export type SellerPaymentMethod = {
   kind: PaymentMethod;
   holderName: string;
   accountNumber: string;
+  qrPath?: string | null;
+  qrUrl?: string | null;
+  logoPath?: string | null;
+  logoUrl?: string | null;
+  isPrimary: boolean;
+  isActive: boolean;
 };
 
 export type PaymentStatus = "pendiente" | "enviado" | "aprobado" | "rechazado";
@@ -81,6 +87,21 @@ export type Seller = {
   yapeNumber: string;
   plinHolder: string;
   plinNumber: string;
+  logoPath: string | null;
+  logoUrl: string | null;
+  storeMessage: string;
+  storeBannerEnabled: boolean;
+  storeBannerKicker: string;
+  storeBannerTitle: string;
+  storeBannerAccent: string;
+  storeBannerDescription: string;
+  storeBannerPath: string | null;
+  storeBannerUrl: string | null;
+  notifyLoginEmail: boolean;
+  notifyNewOrder: boolean;
+  notifyPaymentReview: boolean;
+  notifyServiceExpiring: boolean;
+  notifyInventoryExpiring: boolean;
 };
 
 export type Customer = {
@@ -127,6 +148,9 @@ export type Product = {
   active: boolean;
   stock: number;
   soldOut: boolean;
+  compareAtPrice: number | null;
+  onOffer: boolean;
+  inventoryLinked: boolean;
 };
 
 export type StreamingAccount = {
@@ -139,6 +163,15 @@ export type StreamingAccount = {
   maxProfiles: number;
   status: "available" | "full" | "inactive";
   usedProfiles: number;
+  expiresAt: string | null;
+  supplierName: string;
+  supplierContact: string;
+  supplierCost: number;
+  supplierNote: string;
+  supplierExpiresAt: string | null;
+  saleKind: "profiles" | "full";
+  resellerName: string;
+  resellerWhatsapp: string;
 };
 
 export type Plan = {
@@ -345,3 +378,56 @@ export type ExpiryAlertLevel =
   | "vence_3_dias"
   | "vence_7_dias"
   | "vencido";
+
+export type WholesaleOfferKind = "perfil" | "cuenta_completa";
+
+export type Supplier = {
+  id: string;
+  name: string;
+  contact: string | null;
+  status: "active" | "inactive" | string;
+  notes: string | null;
+};
+
+export type WholesaleCatalogProduct = {
+  id: string;
+  supplierId: string | null;
+  platformId: string | null;
+  name: string;
+  description: string;
+  wholesalePrice: number;
+  costPrice: number;
+  offerKind: WholesaleOfferKind;
+  status: "active" | "inactive" | string;
+  notes: string | null;
+  imagePath: string | null;
+  imageUrl: string | null;
+  acquired: number;
+  sold: number;
+  available: number;
+};
+
+export type WholesaleStockEntry = {
+  id: string;
+  supplierProductId: string;
+  supplierId: string | null;
+  quantity: number;
+  unitCost: number | null;
+  receivedAt: string;
+  notes: string | null;
+};
+
+export type WholesaleSale = {
+  id: string;
+  supplierProductId: string;
+  sellerId: string;
+  platformId: string | null;
+  offerKind: WholesaleOfferKind;
+  quantity: number;
+  costPrice: number;
+  wholesalePrice: number;
+  purchasedAt: string;
+  expiresAt: string;
+  status: "active" | "cancelled";
+  notes: string | null;
+};

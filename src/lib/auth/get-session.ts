@@ -50,8 +50,8 @@ export async function getAppSession(): Promise<AppSession> {
   const role = (profile?.role as AppRole | undefined) ?? "customer";
 
   const [{ data: seller }, { data: customer }] = await Promise.all([
-    supabase.from("sellers").select("id, name").eq("profile_id", user.id).maybeSingle(),
-    supabase.from("customers").select("id, name").eq("profile_id", user.id).maybeSingle(),
+    supabase.from("sellers").select("id, name").eq("profile_id", user.id).limit(1).maybeSingle(),
+    supabase.from("customers").select("id, name").eq("profile_id", user.id).limit(1).maybeSingle(),
   ]);
 
   return {

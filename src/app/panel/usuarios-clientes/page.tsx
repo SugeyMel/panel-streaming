@@ -11,6 +11,7 @@ import { customerAccounts } from "@/data/mock";
 import { formatDate } from "@/lib/format";
 import { CURRENT_SELLER_ID } from "@/lib/session";
 import { getCustomer } from "@/lib/selectors";
+import { whatsappParaMostrar } from "@/lib/clientes";
 
 export default function SellerCustomerUsersPage() {
   const [open, setOpen] = useState(false);
@@ -30,7 +31,7 @@ export default function SellerCustomerUsersPage() {
             { key: "c", header: "Cliente", render: (row) => getCustomer(row.customerId)?.name ?? "—" },
             { key: "n", header: "Nombre", render: (row) => row.name },
             { key: "e", header: "Correo", render: (row) => row.email },
-            { key: "w", header: "WhatsApp", render: (row) => row.whatsapp },
+            { key: "w", header: "WhatsApp", render: (row) => whatsappParaMostrar(row.whatsapp) },
             {
               key: "s",
               header: "Estado",

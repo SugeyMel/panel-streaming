@@ -3,10 +3,12 @@
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
 import { OrderProgress } from "@/components/orders/OrderProgress";
 import { orders } from "@/data/mock";
 import { formatCurrency } from "@/lib/format";
 import { namedOrder } from "@/lib/selectors";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import { PlatformName } from "@/components/ui/PlatformLogo";
 
 export function OrderLookupForm() {
@@ -39,12 +41,7 @@ export function OrderLookupForm() {
           </label>
           <label className="block">
             <span className="mb-2 block text-sm text-slate-300">Número de celular</span>
-            <input
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="987654321"
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-cyan-400/40"
-            />
+            <WhatsAppInput value={phone} onValueChange={setPhone} required />
           </label>
           <Button type="submit" className="w-full">
             Buscar pedido
@@ -63,7 +60,7 @@ export function OrderLookupForm() {
             <span className="text-white">{tracked.customerName}</span>
           </p>
           <p>
-            Celular: <span className="text-white">{tracked.whatsapp}</span>
+            Celular: <span className="text-white">{whatsappParaMostrar(tracked.whatsapp)}</span>
           </p>
           <p className="flex items-center gap-2">
             Plataforma:{" "}

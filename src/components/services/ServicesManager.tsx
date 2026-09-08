@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ServiceCard } from "@/components/services/ServiceCard";
-import { formatDate } from "@/lib/format";
-import { waLink, renewalMessage, confirmRenewalMessage, supportMessage } from "@/lib/whatsapp";
+import { daysRemaining, formatDate } from "@/lib/format";
+import { waLink, reminderMessage, confirmRenewalMessage, supportMessage, type PlantillasWhatsapp } from "@/lib/whatsapp";
 import type { Customer, Platform, Product, Subscription } from "@/lib/types";
 
 export function ServicesManager({
@@ -16,12 +16,14 @@ export function ServicesManager({
   products,
   customers,
   showInternal,
+  plantillas = {},
 }: {
   services: Subscription[];
   platforms: Platform[];
   products: Product[];
   customers: Customer[];
   showInternal: boolean;
+  plantillas?: PlantillasWhatsapp;
 }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -77,7 +79,10 @@ export function ServicesManager({
                     className="text-cyan-300"
                     href={waLink(
                       customer.whatsapp,
-                      renewalMessage(customer.name, platform.name, formatDate(subscription.endDate)),
+                      reminderMessage(customer.name, platform.name, formatDate(subscription.endDate), {
+                        dias: daysRemaining(subscription.endDate),
+                        plantillas,
+                      }),
                     )}
                     target="_blank"
                     rel="noreferrer"

@@ -7,7 +7,8 @@ import { OrderReviewButtons } from "@/components/orders/OrderReviewButtons";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { loadCustomers, loadOrders, loadPlatforms, loadProducts, loadOrderReceiptUrl, loadServices, loadStreamingAccounts, panelScope } from "@/lib/data/queries";
+import { whatsappParaMostrar } from "@/lib/clientes";
+import { loadCustomers, loadOrders, loadPlatforms, loadProducts, loadOrderReceiptUrl, loadServices, loadStreamingAccounts, loadMessageTemplates, panelScope } from "@/lib/data/queries";
 import { waLink, supportMessage } from "@/lib/whatsapp";
 
 export default async function SellerOrderDetailPage({
@@ -17,13 +18,14 @@ export default async function SellerOrderDetailPage({
 }) {
   const { id } = await params;
   const { sellerId } = await panelScope();
-  const [orders, customers, platforms, products, services, accounts] = await Promise.all([
+  const [orders, customers, platforms, products, services, accounts, plantillas] = await Promise.all([
     loadOrders({ sellerId }),
     loadCustomers(sellerId),
     loadPlatforms(),
     loadProducts(sellerId),
     loadServices({ sellerId }),
     loadStreamingAccounts(sellerId),
+    loadMessageTemplates(sellerId),
   ]);
   const order = orders.find((item) => item.id === id);
   if (!order) notFound();
@@ -41,7 +43,7 @@ export default async function SellerOrderDetailPage({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-2 p-5 text-sm text-slate-300">
           <p>Cliente: <span className="text-white">{customer?.name}</span></p>
-          <p>WhatsApp: <span className="text-white">{order.whatsapp || customer?.whatsapp}</span></p>
+          <p>WhatsApp: <span className="text-white">{whatsappParaMostrar(order.whatsapp || customer?.whatsapp || "") || "—"}</span></p>
           <p className="flex items-center gap-2">
             Plataforma: {platform ? <PlatformName platform={platform} size="table" className="text-white" /> : <span className="text-white">—</span>}
           </p>
@@ -91,6 +93,7 @@ export default async function SellerOrderDetailPage({
             initialProfile={service?.accessProfile}
             initialNote={order.deliveryNote || service?.notes}
             initialAccountId={service?.accountId}
+            plantillas={plantillas}
           />
         </Card>
       ) : null}

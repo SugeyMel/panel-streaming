@@ -4,6 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { isPhoneLogin, normalizePhone, phoneToAuthEmail, toAuthEmail } from "@/lib/auth/phone-login";
+import { whatsappParaGuardar } from "@/lib/clientes";
+import { isHomeImageSlot } from "@/lib/home-images";
+import {
+  MAX_CUERPO_WHATSAPP,
+  textoPlantillaUtil,
+  type TipoPlantillaMensaje,
+} from "@/lib/whatsapp";
 import { uiCustomerStatusToDb, uiSellerStatusToDb } from "@/lib/db/map";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -12,8 +19,13 @@ import type { CustomerStatus, SellerStatus } from "@/lib/types";
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg"]);
 const ALLOWED_LOGO_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_VOUCHER_BYTES = 5 * 1024 * 1024;
-const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const MAX_LOGO_BYTES = 8 * 1024 * 1024;
+const MAX_HOME_IMAGE_BYTES = 8 * 1024 * 1024;
 const PLATFORM_LOGO_BUCKET = "platform-logos";
+const SUPPLIER_PRODUCT_IMAGE_BUCKET = "supplier-product-images";
+const PAYMENT_QR_BUCKET = "seller-qr";
+const SELLER_LOGO_BUCKET = "seller-logos";
+const MAX_QR_BYTES = 2 * 1024 * 1024;
 
 function voucherMime(file: File) {
   if (ALLOWED_MIME.has(file.type)) return file.type;
@@ -100,7 +112,7 @@ export async function upsertSellerAction(formData: FormData) {
     business_name: String(formData.get("businessName") ?? "").trim(),
     slug: String(formData.get("slug") ?? "").trim(),
     email: String(formData.get("email") ?? "").trim(),
-    whatsapp: String(formData.get("whatsapp") ?? "").trim(),
+    whatsapp: whatsappParaGuardar(String(formData.get("whatsapp") ?? "")),
     status: uiSellerStatusToDb(String(formData.get("status") ?? "pendiente") as SellerStatus),
     yape_holder: String(formData.get("yapeHolder") ?? ""),
     yape_number: String(formData.get("yapeNumber") ?? ""),
@@ -108,6 +120,7 @@ export async function upsertSellerAction(formData: FormData) {
     plin_number: String(formData.get("plinNumber") ?? ""),
   };
   if (!payload.name || !payload.slug) return { ok: false, error: "Nombre y slug son obligatorios." };
+  if (!payload.whatsapp) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
 
   const query = id
     ? supabase.from("sellers").update(payload).eq("id", id)
@@ -176,7 +189,7 @@ export async function upsertPlatformAction(formData: FormData) {
   } else if (hasFile && file instanceof File) {
     const mime = logoMime(file);
     if (!mime) return { ok: false, error: "El logo debe ser PNG, WEBP o JPG. SVG no está permitido." };
-    if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "El logo no puede superar 2 MB." };
+    if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "El logo no puede superar 8 MB." };
     const path = `${platformId}/logo.${logoExt(mime)}`;
     if (previousPath && previousPath !== path) {
       await uploader.storage.from(PLATFORM_LOGO_BUCKET).remove([previousPath]);
@@ -203,7 +216,7 @@ export async function upsertCustomerAction(formData: FormData) {
   if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  const whatsapp = normalizePhone(String(formData.get("whatsapp") ?? "").trim());
+  const whatsapp = whatsappParaGuardar(String(formData.get("whatsapp") ?? ""));
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
   const payload = {
@@ -213,7 +226,8 @@ export async function upsertCustomerAction(formData: FormData) {
     email: email || null,
     status: uiCustomerStatusToDb(String(formData.get("status") ?? "activo") as CustomerStatus),
   };
-  if (!payload.name || !payload.whatsapp) return { ok: false, error: "Nombre y celular son obligatorios." };
+  if (!payload.name) return { ok: false, error: "Nombre y celular son obligatorios." };
+  if (!payload.whatsapp) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
   if (id) {
     const { data: existing } = await supabase.from("customers").select("seller_id").eq("id", id).maybeSingle();
     if (!existing || existing.seller_id !== session.sellerId) return { ok: false, error: "No autorizado." };
@@ -276,6 +290,8 @@ export async function upsertProductAction(formData: FormData) {
   const costPrice = Number(formData.get("costPrice") || 0);
   const stock = Number(formData.get("stock") || 0);
   const status = String(formData.get("active") ?? "true") === "true" ? "active" : "inactive";
+  const onOffer = formData.getAll("onOffer").includes("true");
+  const compareAt = optionalMoney(formData.get("compareAtPrice"));
   const groupPlatformId = String(formData.get("groupPlatformId") ?? platformId);
   const groupName = String(formData.get("groupName") ?? name);
   if (!name || !platformId) return { ok: false, error: "Completa producto y plataforma." };
@@ -308,6 +324,8 @@ export async function upsertProductAction(formData: FormData) {
       duration_days: term.days,
       status: term.amount == null ? "inactive" : status,
       stock,
+      on_offer: onOffer,
+      compare_at_price: onOffer ? compareAt : null,
     };
     if (existing) {
       const { error } = await supabase
@@ -321,8 +339,39 @@ export async function upsertProductAction(formData: FormData) {
       if (error) return { ok: false, error: error.message };
     }
   }
+
+  const accountIds = formData.getAll("accountId").map((value) => String(value)).filter(Boolean);
+  if (formData.has("accountId") || formData.get("syncAccounts") === "1") {
+    const { error: delError } = await supabase
+      .from("store_offer_accounts")
+      .delete()
+      .eq("seller_id", session.sellerId)
+      .eq("platform_id", groupPlatformId)
+      .eq("product_name", groupName);
+    if (delError) return { ok: false, error: delError.message };
+    if (accountIds.length) {
+      const { data: owned } = await supabase
+        .from("streaming_accounts")
+        .select("id")
+        .eq("seller_id", session.sellerId)
+        .eq("platform_id", platformId)
+        .in("id", accountIds);
+      const rows = (owned ?? []).map((row) => ({
+        seller_id: session.sellerId,
+        platform_id: platformId,
+        product_name: name,
+        account_id: String(row.id),
+      }));
+      if (rows.length) {
+        const { error: linkError } = await supabase.from("store_offer_accounts").insert(rows);
+        if (linkError) return { ok: false, error: linkError.message };
+      }
+    }
+  }
+
   revalidatePath("/panel/productos");
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/vendedores");
   return { ok: true };
 }
 
@@ -376,6 +425,7 @@ export async function upsertServiceAction(formData: FormData) {
   if (error) return { ok: false, error: error.message };
   revalidatePath("/panel/servicios");
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
   revalidatePath("/cliente/acceso");
   return { ok: true };
 }
@@ -438,6 +488,7 @@ export async function upsertSupplierAction(formData: FormData) {
   const { error } = await query;
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin/proveedores");
+  revalidatePath("/admin/mayorista");
   return { ok: true };
 }
 
@@ -448,16 +499,212 @@ export async function upsertSupplierProductAction(formData: FormData) {
   requireRole(session, ["superadmin"]);
   const supabase = await createClient();
   if (!supabase) return { ok: false, error: "Sin cliente" };
-  const { error } = await supabase.from("supplier_products").insert({
-    supplier_id: String(formData.get("supplierId") ?? ""),
+
+  const id = String(formData.get("id") ?? "").trim();
+  const supplierId = String(formData.get("supplierId") ?? "").trim();
+  const offerKind = String(formData.get("offerKind") ?? "perfil") === "cuenta_completa" ? "cuenta_completa" : "perfil";
+  const payload: Record<string, unknown> = {
+    supplier_id: supplierId || null,
     platform_id: String(formData.get("platformId") ?? "") || null,
     name: String(formData.get("name") ?? "").trim(),
+    description: String(formData.get("description") ?? ""),
     wholesale_price: Number(formData.get("wholesalePrice") ?? 0),
+    cost_price: Number(formData.get("costPrice") ?? 0),
+    offer_kind: offerKind,
     status: String(formData.get("status") ?? "active"),
     notes: String(formData.get("notes") ?? ""),
-  });
-  if (error) return { ok: false, error: error.message };
+  };
+  if (!payload.name) {
+    return { ok: false, error: "El nombre del producto es obligatorio." };
+  }
+
+  const catalogHint =
+    "Falta ejecutar el SQL 0022_wholesale_catalog_sales.sql en Supabase para costo, tipo y descripción.";
+  let productId = id;
+  if (id) {
+    const { error } = await supabase.from("supplier_products").update(payload).eq("id", id);
+    if (error) {
+      return {
+        ok: false,
+        error: /cost_price|offer_kind|description|null value.*supplier_id/i.test(error.message) ? catalogHint : error.message,
+      };
+    }
+  } else {
+    const { data, error } = await supabase.from("supplier_products").insert(payload).select("id").single();
+    if (error || !data) {
+      return {
+        ok: false,
+        error: error && /cost_price|offer_kind|description|null value.*supplier_id/i.test(error.message)
+          ? catalogHint
+          : error?.message ?? "No se pudo crear el producto.",
+      };
+    }
+    productId = String(data.id);
+  }
+
+  const file = formData.get("image");
+  const removeImage = String(formData.get("removeImage") ?? "") === "1";
+  const hasFile = file instanceof File && file.size > 0;
+  const { data: current } = await supabase.from("supplier_products").select("image_path").eq("id", productId).maybeSingle();
+  const previousPath = current?.image_path ? String(current.image_path) : null;
+  const uploader = createServiceClient() ?? supabase;
+
+  if (removeImage && !hasFile) {
+    if (previousPath) {
+      await uploader.storage.from(SUPPLIER_PRODUCT_IMAGE_BUCKET).remove([previousPath]);
+    }
+    const { error } = await supabase.from("supplier_products").update({ image_path: null }).eq("id", productId);
+    if (error) {
+      return {
+        ok: false,
+        error: /image_path/i.test(error.message)
+          ? "Falta ejecutar el SQL 0020_supplier_product_images.sql en Supabase para guardar fotos mayoristas."
+          : error.message,
+      };
+    }
+  } else if (hasFile && file instanceof File) {
+    const mime = logoMime(file);
+    if (!mime) return { ok: false, error: "La imagen debe ser PNG, WEBP o JPG. SVG no está permitido." };
+    if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "La imagen no puede superar 8 MB." };
+    const path = `${productId}/image.${logoExt(mime)}`;
+    if (previousPath && previousPath !== path) {
+      await uploader.storage.from(SUPPLIER_PRODUCT_IMAGE_BUCKET).remove([previousPath]);
+    }
+    const { error: uploadError } = await uploader.storage
+      .from(SUPPLIER_PRODUCT_IMAGE_BUCKET)
+      .upload(path, file, { upsert: true, contentType: mime });
+    if (uploadError) return { ok: false, error: uploadError.message };
+    const { error } = await supabase.from("supplier_products").update({ image_path: path }).eq("id", productId);
+    if (error) {
+      return {
+        ok: false,
+        error: /image_path/i.test(error.message)
+          ? "Falta ejecutar el SQL 0020_supplier_product_images.sql en Supabase para guardar fotos mayoristas."
+          : error.message,
+      };
+    }
+  }
+
   revalidatePath("/admin/proveedores");
+  revalidatePath("/admin/mayorista");
+  revalidatePath("/admin/ventas");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
+  return { ok: true };
+}
+
+function wholesaleSchemaHint(message: string) {
+  if (/does not exist|schema cache|wholesale_/i.test(message)) {
+    return "Falta ejecutar el SQL 0022_wholesale_catalog_sales.sql en Supabase.";
+  }
+  return message;
+}
+
+export async function addWholesaleStockAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const supplierProductId = String(formData.get("supplierProductId") ?? "").trim();
+  const quantity = Number(formData.get("quantity") ?? 0);
+  if (!supplierProductId) return { ok: false, error: "Elige un producto del catálogo." };
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return { ok: false, error: "La cantidad debe ser un entero mayor a 0." };
+  }
+  const unitCostRaw = String(formData.get("unitCost") ?? "").trim();
+  const supplierId = String(formData.get("supplierId") ?? "").trim();
+  const { error } = await supabase.from("wholesale_stock_entries").insert({
+    supplier_product_id: supplierProductId,
+    supplier_id: supplierId || null,
+    quantity,
+    unit_cost: unitCostRaw === "" ? null : Number(unitCostRaw),
+    received_at: String(formData.get("receivedAt") ?? "") || new Date().toISOString().slice(0, 10),
+    notes: String(formData.get("notes") ?? ""),
+  });
+  if (error) return { ok: false, error: wholesaleSchemaHint(error.message) };
+  revalidatePath("/admin/mayorista");
+  revalidatePath("/admin/ventas");
+  revalidatePath("/admin/proveedores");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
+  return { ok: true };
+}
+
+export async function upsertWholesaleSaleAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+
+  const id = String(formData.get("id") ?? "").trim();
+  const supplierProductId = String(formData.get("supplierProductId") ?? "").trim();
+  const sellerId = String(formData.get("sellerId") ?? "").trim();
+  if (!supplierProductId) return { ok: false, error: "La venta debe elegir un producto del catálogo Mayorista." };
+  if (!sellerId) return { ok: false, error: "Elige el vendedor que compra." };
+
+  const { data: product, error: productError } = await supabase
+    .from("supplier_products")
+    .select("id, platform_id, cost_price, wholesale_price, offer_kind")
+    .eq("id", supplierProductId)
+    .maybeSingle();
+  if (productError) return { ok: false, error: wholesaleSchemaHint(productError.message) };
+  if (!product) return { ok: false, error: "Ese producto ya no está en el catálogo." };
+
+  const purchasedAt = String(formData.get("purchasedAt") ?? "").trim();
+  const expiresAt = String(formData.get("expiresAt") ?? "").trim();
+  if (!purchasedAt || !expiresAt) return { ok: false, error: "Fecha de compra y vencimiento son obligatorias." };
+
+  const costRaw = String(formData.get("costPrice") ?? "").trim();
+  const priceRaw = String(formData.get("wholesalePrice") ?? "").trim();
+  const kindRaw = String(formData.get("offerKind") ?? "").trim();
+  const platformRaw = String(formData.get("platformId") ?? "").trim();
+  const quantity = Number(formData.get("quantity") ?? 1);
+
+  const payload = {
+    supplier_product_id: supplierProductId,
+    seller_id: sellerId,
+    platform_id: platformRaw || (product.platform_id ? String(product.platform_id) : null),
+    offer_kind: kindRaw === "cuenta_completa" || kindRaw === "perfil" ? kindRaw : String(product.offer_kind ?? "perfil"),
+    quantity: Number.isInteger(quantity) && quantity > 0 ? quantity : 1,
+    cost_price: costRaw === "" ? Number(product.cost_price ?? 0) : Number(costRaw),
+    wholesale_price: priceRaw === "" ? Number(product.wholesale_price ?? 0) : Number(priceRaw),
+    purchased_at: purchasedAt,
+    expires_at: expiresAt,
+    notes: String(formData.get("notes") ?? ""),
+    status: "active" as const,
+  };
+
+  if (id) {
+    const { error } = await supabase.from("wholesale_sales").update(payload).eq("id", id);
+    if (error) return { ok: false, error: wholesaleSchemaHint(error.message) };
+  } else {
+    const { error } = await supabase.from("wholesale_sales").insert(payload);
+    if (error) return { ok: false, error: wholesaleSchemaHint(error.message) };
+  }
+
+  revalidatePath("/admin/ventas");
+  revalidatePath("/admin/mayorista");
+  revalidatePath("/admin/proveedores");
+  return { ok: true };
+}
+
+export async function cancelWholesaleSaleAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const id = String(formData.get("id") ?? "").trim();
+  if (!id) return { ok: false, error: "Falta la venta." };
+  const { error } = await supabase.from("wholesale_sales").update({ status: "cancelled" }).eq("id", id);
+  if (error) return { ok: false, error: wholesaleSchemaHint(error.message) };
+  revalidatePath("/admin/ventas");
+  revalidatePath("/admin/mayorista");
   return { ok: true };
 }
 
@@ -588,6 +835,7 @@ export async function deliverOrderAction(formData: FormData) {
 
   revalidatePath("/panel/pedidos");
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
   revalidatePath("/panel/servicios");
   revalidatePath("/cliente");
   revalidatePath("/cliente/pedidos");
@@ -665,8 +913,10 @@ export async function placeRenewalCheckoutAction(formData: FormData) {
 
   revalidatePath("/cliente");
   revalidatePath("/cliente/pedidos");
+  revalidatePath("/panel");
   revalidatePath("/panel/pedidos");
   revalidatePath("/panel/comprobantes");
+  revalidatePath("/admin/pedidos");
   return { ok: true, code: result.code };
 }
 
@@ -681,14 +931,18 @@ export async function upsertPaymentMethodAction(formData: FormData) {
     session.role === "seller" ? session.sellerId : String(formData.get("sellerId") ?? session.sellerId ?? "");
   if (!sellerId) return { ok: false, error: "Vendedor no encontrado." };
   const id = String(formData.get("id") ?? "");
+  const kind = String(formData.get("kind") ?? "yape") as "yape" | "plin" | "bank";
   const payload = {
     seller_id: sellerId,
-    kind: String(formData.get("kind") ?? "yape"),
+    kind,
     holder_name: String(formData.get("holderName") ?? "").trim(),
     account_number: String(formData.get("accountNumber") ?? "").trim(),
   };
   if (!payload.holder_name || !payload.account_number) {
     return { ok: false, error: "Completa el nombre y el número / cuenta." };
+  }
+  if (!["yape", "plin", "bank"].includes(kind)) {
+    return { ok: false, error: "Tipo de medio de pago inválido." };
   }
   if (!id) {
     const { count } = await supabase
@@ -696,15 +950,100 @@ export async function upsertPaymentMethodAction(formData: FormData) {
       .select("id", { count: "exact", head: true })
       .eq("seller_id", sellerId);
     if ((count ?? 0) >= 5) return { ok: false, error: "Máximo 5 medios de pago." };
+    if ((count ?? 0) === 0) Object.assign(payload, { is_primary: true, is_active: true });
   }
-  const query = id
-    ? supabase.from("seller_payment_methods").update(payload).eq("id", id).eq("seller_id", sellerId)
-    : supabase.from("seller_payment_methods").insert(payload);
-  const { error } = await query;
-  if (error) return { ok: false, error: error.message };
+
+  const methodQuery = id
+    ? supabase
+        .from("seller_payment_methods")
+        .update(payload)
+        .eq("id", id)
+        .eq("seller_id", sellerId)
+        .select("id, qr_path, logo_path")
+        .maybeSingle()
+    : supabase.from("seller_payment_methods").insert(payload).select("id, qr_path, logo_path").maybeSingle();
+  const { data: saved, error } = await methodQuery;
+  if (error || !saved?.id) return { ok: false, error: error?.message ?? "No se pudo guardar el medio de pago." };
+
+  const methodId = String(saved.id);
+  const previousPath = saved.qr_path ? String(saved.qr_path) : "";
+  const previousLogoPath = saved.logo_path ? String(saved.logo_path) : "";
+
+  if (kind === "bank") {
+    if (previousPath) {
+      const uploader = createServiceClient() ?? supabase;
+      await uploader.storage.from(PAYMENT_QR_BUCKET).remove([previousPath]);
+      await supabase
+        .from("seller_payment_methods")
+        .update({ qr_path: null })
+        .eq("id", methodId)
+        .eq("seller_id", sellerId);
+    }
+  } else {
+    const file = formData.get("qr");
+    const hasFile = file instanceof File && file.size > 0;
+    if (hasFile) {
+      const mime = logoMime(file);
+      if (!mime) return { ok: false, error: "El QR debe ser PNG, WEBP o JPG." };
+      if (file.size > MAX_QR_BYTES) return { ok: false, error: "El QR no puede superar 2 MB." };
+      const path = `${sellerId}/${methodId}/qr.${logoExt(mime)}`;
+      const uploader = createServiceClient() ?? supabase;
+      const { error: uploadError } = await uploader.storage
+        .from(PAYMENT_QR_BUCKET)
+        .upload(path, file, { upsert: true, contentType: mime, cacheControl: "0" });
+      if (uploadError) return { ok: false, error: uploadError.message };
+      const { error: pathError } = await supabase
+        .from("seller_payment_methods")
+        .update({ qr_path: path, updated_at: new Date().toISOString() })
+        .eq("id", methodId)
+        .eq("seller_id", sellerId);
+      if (pathError) return { ok: false, error: pathError.message };
+      if (previousPath && previousPath !== path) {
+        await uploader.storage.from(PAYMENT_QR_BUCKET).remove([previousPath]);
+      }
+    }
+  }
+
+  const logoFile = formData.get("logo");
+  const hasLogoFile = logoFile instanceof File && logoFile.size > 0;
+  const removeLogo = String(formData.get("removeLogo") ?? "") === "true";
+  if (hasLogoFile) {
+    const mime = logoMime(logoFile);
+    if (!mime) return { ok: false, error: "El logo debe ser PNG, WEBP o JPG." };
+    if (logoFile.size > MAX_LOGO_BYTES) return { ok: false, error: "El logo no puede superar 8 MB." };
+    const path = `${sellerId}/methods/${methodId}/logo.${logoExt(mime)}`;
+    const uploader = createServiceClient() ?? supabase;
+    const { error: uploadError } = await uploader.storage
+      .from(SELLER_LOGO_BUCKET)
+      .upload(path, logoFile, { upsert: true, contentType: mime, cacheControl: "0" });
+    if (uploadError) return { ok: false, error: uploadError.message };
+    const { error: pathError } = await supabase
+      .from("seller_payment_methods")
+      .update({ logo_path: path, updated_at: new Date().toISOString() })
+      .eq("id", methodId)
+      .eq("seller_id", sellerId);
+    if (pathError) return { ok: false, error: pathError.message };
+    if (previousLogoPath && previousLogoPath !== path) {
+      await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousLogoPath]);
+    }
+  } else if (removeLogo && previousLogoPath) {
+    const uploader = createServiceClient() ?? supabase;
+    await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousLogoPath]);
+    const { error: pathError } = await supabase
+      .from("seller_payment_methods")
+      .update({ logo_path: null, updated_at: new Date().toISOString() })
+      .eq("id", methodId)
+      .eq("seller_id", sellerId);
+    if (pathError) return { ok: false, error: pathError.message };
+  }
+
   revalidatePath("/panel/configuracion");
   revalidatePath("/admin/configuracion");
   revalidatePath("/admin/vendedores");
+  revalidatePath("/cliente");
+  revalidatePath("/cliente/checkout");
+  revalidatePath("/cliente/pedidos");
+  revalidatePath("/cliente/servicios");
   return { ok: true };
 }
 
@@ -724,14 +1063,50 @@ export async function upsertStreamingAccountAction(formData: FormData) {
     label: String(formData.get("label") ?? "").trim(),
     max_profiles: Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 5))),
     status: String(formData.get("status") ?? "available"),
+    expires_at: String(formData.get("expiresAt") ?? "").trim() || null,
+    supplier_name: String(formData.get("supplierName") ?? "").trim(),
+    supplier_contact: String(formData.get("supplierContact") ?? "").trim(),
+    supplier_cost: Number(formData.get("supplierCost") || 0),
+    supplier_note: String(formData.get("supplierNote") ?? "").trim(),
+    supplier_expires_at: String(formData.get("supplierExpiresAt") ?? "").trim() || null,
+    sale_kind: String(formData.get("saleKind") ?? "profiles") === "full" ? "full" : "profiles",
+    reseller_name: String(formData.get("resellerName") ?? "").trim(),
+    reseller_whatsapp: "",
   };
+  const resellerRaw = String(formData.get("resellerWhatsapp") ?? "").trim();
+  if (resellerRaw) {
+    const stored = whatsappParaGuardar(resellerRaw);
+    if (!stored) return { ok: false, error: "El WhatsApp del vendedor debe tener 9 dígitos" };
+    payload.reseller_whatsapp = stored;
+  }
+  if (payload.sale_kind === "full") {
+    payload.max_profiles = 1;
+    if (payload.reseller_whatsapp) payload.status = payload.status === "inactive" ? "inactive" : "full";
+  }
   if (!payload.platform_id || !payload.email) return { ok: false, error: "Completa plataforma y correo / usuario." };
   const query = id
     ? supabase.from("streaming_accounts").update(payload).eq("id", id).eq("seller_id", session.sellerId)
     : supabase.from("streaming_accounts").insert(payload);
-  const { error } = await query;
+  const { data: saved, error } = await query.select("id").maybeSingle();
   if (error) return { ok: false, error: error.message };
+  const accountId = String(saved?.id ?? id);
+  const linkProductName = String(formData.get("linkProductName") ?? "").trim();
+  if (accountId && formData.has("linkProductName")) {
+    await supabase.from("store_offer_accounts").delete().eq("account_id", accountId).eq("seller_id", session.sellerId);
+    if (linkProductName) {
+      const { error: linkError } = await supabase.from("store_offer_accounts").insert({
+        seller_id: session.sellerId,
+        platform_id: payload.platform_id,
+        product_name: linkProductName,
+        account_id: accountId,
+      });
+      if (linkError) return { ok: false, error: linkError.message };
+    }
+  }
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
+  revalidatePath("/panel/vendedores");
+  revalidatePath("/panel/productos");
   return { ok: true };
 }
 
@@ -749,6 +1124,8 @@ export async function deleteStreamingAccountAction(id: string) {
     .eq("seller_id", session.sellerId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
+  revalidatePath("/panel/vendedores");
   return { ok: true };
 }
 
@@ -764,12 +1141,15 @@ export async function patchInventoryServiceAction(formData: FormData) {
   const free = String(formData.get("free") ?? "") === "1";
   const payload: Record<string, unknown> = free
     ? { account_id: null, access_profile: null, status: "cancelled" }
-    : {
-        notes: String(formData.get("notes") ?? ""),
-        access_profile: String(formData.get("accessProfile") ?? "").trim() || null,
-        access_password: String(formData.get("accessPassword") ?? "").trim() || null,
-      };
+    : {};
   if (!free) {
+    if (formData.has("notes")) payload.notes = String(formData.get("notes") ?? "");
+    if (formData.has("accessProfile")) {
+      payload.access_profile = String(formData.get("accessProfile") ?? "").trim() || null;
+    }
+    if (formData.has("accessPassword")) {
+      payload.access_password = String(formData.get("accessPassword") ?? "").trim() || null;
+    }
     const startDate = String(formData.get("startDate") ?? "");
     const endDate = String(formData.get("endDate") ?? "");
     const salePrice = String(formData.get("salePrice") ?? "");
@@ -784,6 +1164,7 @@ export async function patchInventoryServiceAction(formData: FormData) {
     .eq("seller_id", session.sellerId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
   revalidatePath("/panel/servicios");
   revalidatePath("/cliente/acceso");
   return { ok: true };
@@ -800,10 +1181,352 @@ export async function deletePaymentMethodAction(id: string, sellerId: string) {
   if (!owner || (session.role === "seller" && owner !== session.sellerId)) {
     return { ok: false, error: "No autorizado." };
   }
+  const { data: current } = await supabase
+    .from("seller_payment_methods")
+    .select("qr_path, logo_path")
+    .eq("id", id)
+    .eq("seller_id", owner)
+    .maybeSingle();
   const { error } = await supabase.from("seller_payment_methods").delete().eq("id", id).eq("seller_id", owner);
+  if (error) return { ok: false, error: error.message };
+  const uploader = createServiceClient() ?? supabase;
+  if (current?.qr_path) await uploader.storage.from(PAYMENT_QR_BUCKET).remove([String(current.qr_path)]);
+  if (current?.logo_path) await uploader.storage.from(SELLER_LOGO_BUCKET).remove([String(current.logo_path)]);
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/admin/configuracion");
+  revalidatePath("/cliente");
+  revalidatePath("/cliente/checkout");
+  revalidatePath("/cliente/pedidos");
+  revalidatePath("/cliente/servicios");
+  return { ok: true };
+}
+
+export async function updateSellerSettingsAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  const payload: Record<string, unknown> = {};
+  const name = formData.get("name");
+  const businessName = formData.get("businessName");
+  const whatsapp = formData.get("whatsapp");
+  const storeMessage = formData.get("storeMessage");
+  if (typeof name === "string") payload.name = name.trim();
+  if (typeof businessName === "string") payload.business_name = businessName.trim();
+  if (typeof whatsapp === "string") {
+    const stored = whatsappParaGuardar(whatsapp);
+    if (!stored) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
+    payload.whatsapp = stored;
+  }
+  if (typeof storeMessage === "string") payload.store_message = storeMessage.trim();
+  const bannerEnabled = formData.getAll("storeBannerEnabled");
+  if (bannerEnabled.length) payload.store_banner_enabled = bannerEnabled.includes("true");
+  const bannerKicker = formData.get("storeBannerKicker");
+  if (typeof bannerKicker === "string") payload.store_banner_kicker = bannerKicker.trim();
+  const bannerTitle = formData.get("storeBannerTitle");
+  if (typeof bannerTitle === "string") payload.store_banner_title = bannerTitle.trim();
+  const bannerAccent = formData.get("storeBannerAccent");
+  if (typeof bannerAccent === "string") payload.store_banner_accent = bannerAccent.trim();
+  const bannerDescription = formData.get("storeBannerDescription");
+  if (typeof bannerDescription === "string") payload.store_banner_description = bannerDescription.trim();
+  for (const key of [
+    "notifyLoginEmail",
+    "notifyNewOrder",
+    "notifyPaymentReview",
+    "notifyServiceExpiring",
+    "notifyInventoryExpiring",
+  ] as const) {
+    if (formData.has(key)) {
+      const column = {
+        notifyLoginEmail: "notify_login_email",
+        notifyNewOrder: "notify_new_order",
+        notifyPaymentReview: "notify_payment_review",
+        notifyServiceExpiring: "notify_service_expiring",
+        notifyInventoryExpiring: "notify_inventory_expiring",
+      }[key];
+      payload[column] = String(formData.get(key)) === "true";
+    }
+  }
+  if (Object.keys(payload).length === 0) return { ok: false, error: "Nada que guardar." };
+  const { error } = await supabase.from("sellers").update(payload).eq("id", session.sellerId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel");
+  return { ok: true };
+}
+
+const TIPOS_PLANTILLA_MENSAJE = new Set<TipoPlantillaMensaje>([
+  "recordatorio_vencimiento",
+  "oferta_renovacion",
+  "entrega_pedido",
+  "bienvenida",
+]);
+
+function revalidateMessageTemplates() {
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/panel/clientes");
+  revalidatePath("/panel/vendedores");
+  revalidatePath("/panel/pedidos");
+  revalidatePath("/panel/inventario");
+  revalidatePath("/panel/servicios");
+}
+
+export async function upsertMessageTemplateAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  const tipo = String(formData.get("tipo") ?? "") as TipoPlantillaMensaje;
+  if (!TIPOS_PLANTILLA_MENSAJE.has(tipo)) return { ok: false, error: "Tipo de mensaje no válido." };
+  const cuerpo = String(formData.get("cuerpo") ?? "");
+  if (!textoPlantillaUtil(cuerpo)) {
+    return { ok: false, error: "El mensaje no puede quedar vacío. Usa Restaurar original para volver al texto por defecto." };
+  }
+  if (cuerpo.length > MAX_CUERPO_WHATSAPP) {
+    return { ok: false, error: `El mensaje no puede superar ${MAX_CUERPO_WHATSAPP} caracteres.` };
+  }
+  const vencidoRaw = String(formData.get("cuerpoVencido") ?? "");
+  const cuerpoVencido = textoPlantillaUtil(vencidoRaw);
+  if (cuerpoVencido && vencidoRaw.length > MAX_CUERPO_WHATSAPP) {
+    return { ok: false, error: `El mensaje vencido no puede superar ${MAX_CUERPO_WHATSAPP} caracteres.` };
+  }
+  const { error } = await supabase.from("message_templates").upsert(
+    {
+      seller_id: session.sellerId,
+      tipo,
+      cuerpo: cuerpo.trim(),
+      cuerpo_vencido: cuerpoVencido,
+      activo: true,
+    },
+    { onConflict: "seller_id,tipo" },
+  );
+  if (error) return { ok: false, error: error.message };
+  revalidateMessageTemplates();
+  return { ok: true };
+}
+
+export async function restoreMessageTemplateAction(tipo: TipoPlantillaMensaje) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  if (!TIPOS_PLANTILLA_MENSAJE.has(tipo)) return { ok: false, error: "Tipo de mensaje no válido." };
+  const { error } = await supabase
+    .from("message_templates")
+    .delete()
+    .eq("seller_id", session.sellerId)
+    .eq("tipo", tipo);
+  if (error) return { ok: false, error: error.message };
+  revalidateMessageTemplates();
+  return { ok: true };
+}
+
+function revalidateHomeImages() {
+  revalidatePath("/panel");
+  revalidatePath("/panel/configuracion");
+}
+
+export async function uploadHomeImageAction(formData: FormData) {
+  try {
+    const blocked = ensureLive();
+    if (blocked) return blocked;
+    const session = await getAppSession();
+    requireRole(session, ["seller"]);
+    const supabase = await createClient();
+    if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+    const slot = String(formData.get("slot") ?? "");
+    if (!isHomeImageSlot(slot)) return { ok: false, error: "Espacio de imagen no válido." };
+    const file = formData.get("image");
+    if (!(file instanceof File) || file.size === 0) {
+      return { ok: false, error: "Elige una imagen PNG, JPG o WEBP." };
+    }
+    const mime = logoMime(file);
+    if (!mime) return { ok: false, error: "Elige una imagen PNG, JPG o WEBP." };
+    if (file.size > MAX_HOME_IMAGE_BYTES) return { ok: false, error: "La imagen no puede superar 8 MB." };
+    const { data: current } = await supabase
+      .from("home_images")
+      .select("storage_path")
+      .eq("seller_id", session.sellerId)
+      .eq("slot", slot)
+      .maybeSingle();
+    const previousPath = current?.storage_path ? String(current.storage_path) : "";
+    const path = `${session.sellerId}/home/${slot}.${logoExt(mime)}`;
+    const uploader = createServiceClient() ?? supabase;
+    const { error: uploadError } = await uploader.storage
+      .from(SELLER_LOGO_BUCKET)
+      .upload(path, file, { upsert: true, contentType: mime, cacheControl: "0" });
+    if (uploadError) return { ok: false, error: uploadError.message };
+    const { error } = await supabase.from("home_images").upsert(
+      {
+        seller_id: session.sellerId,
+        slot,
+        storage_path: path,
+      },
+      { onConflict: "seller_id,slot" },
+    );
+    if (error) return { ok: false, error: error.message };
+    if (previousPath && previousPath !== path) {
+      await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousPath]);
+    }
+    revalidateHomeImages();
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo subir la imagen.";
+    return { ok: false, error: message };
+  }
+}
+
+export async function removeHomeImageAction(slot: string) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  if (!isHomeImageSlot(slot)) return { ok: false, error: "Espacio de imagen no válido." };
+  const { data: current } = await supabase
+    .from("home_images")
+    .select("storage_path")
+    .eq("seller_id", session.sellerId)
+    .eq("slot", slot)
+    .maybeSingle();
+  const previousPath = current?.storage_path ? String(current.storage_path) : "";
+  const { error } = await supabase
+    .from("home_images")
+    .delete()
+    .eq("seller_id", session.sellerId)
+    .eq("slot", slot);
+  if (error) return { ok: false, error: error.message };
+  if (previousPath) {
+    const uploader = createServiceClient() ?? supabase;
+    await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousPath]);
+  }
+  revalidateHomeImages();
+  return { ok: true };
+}
+
+export async function uploadSellerLogoAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Elige una imagen PNG o JPG." };
+  const mime = logoMime(file);
+  if (!mime || mime === "image/webp") return { ok: false, error: "El logo debe ser PNG o JPG." };
+  if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "El logo no puede superar 8 MB." };
+  const { data: current } = await supabase.from("sellers").select("logo_path").eq("id", session.sellerId).maybeSingle();
+  const previousPath = current?.logo_path ? String(current.logo_path) : "";
+  const path = `${session.sellerId}/logo.${logoExt(mime)}`;
+  const uploader = createServiceClient() ?? supabase;
+  const { error: uploadError } = await uploader.storage
+    .from(SELLER_LOGO_BUCKET)
+    .upload(path, file, { upsert: true, contentType: mime, cacheControl: "0" });
+  if (uploadError) return { ok: false, error: uploadError.message };
+  const { error } = await supabase.from("sellers").update({ logo_path: path }).eq("id", session.sellerId);
+  if (error) return { ok: false, error: error.message };
+  if (previousPath && previousPath !== path) {
+    await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousPath]);
+  }
+  revalidatePath("/panel/configuracion");
+  return { ok: true };
+}
+
+export async function uploadStoreBannerAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase || !session.sellerId) return { ok: false, error: "Vendedor no encontrado." };
+  const file = formData.get("banner");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Elige una imagen PNG o JPG." };
+  const mime = logoMime(file);
+  if (!mime || mime === "image/webp") return { ok: false, error: "El banner debe ser PNG o JPG." };
+  if (file.size > MAX_HOME_IMAGE_BYTES) return { ok: false, error: "El banner no puede superar 8 MB." };
+  const { data: current } = await supabase
+    .from("sellers")
+    .select("store_banner_path")
+    .eq("id", session.sellerId)
+    .maybeSingle();
+  const previousPath = current?.store_banner_path ? String(current.store_banner_path) : "";
+  const path = `${session.sellerId}/store/banner.${logoExt(mime)}`;
+  const uploader = createServiceClient() ?? supabase;
+  const { error: uploadError } = await uploader.storage
+    .from(SELLER_LOGO_BUCKET)
+    .upload(path, file, { upsert: true, contentType: mime, cacheControl: "0" });
+  if (uploadError) return { ok: false, error: uploadError.message };
+  const { error } = await supabase.from("sellers").update({ store_banner_path: path }).eq("id", session.sellerId);
+  if (error) return { ok: false, error: error.message };
+  if (previousPath && previousPath !== path) {
+    await uploader.storage.from(SELLER_LOGO_BUCKET).remove([previousPath]);
+  }
+  revalidatePath("/panel/configuracion");
+  return { ok: true };
+}
+
+export async function setPaymentMethodPrimaryAction(id: string, sellerId: string) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller", "superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const owner = session.role === "seller" ? session.sellerId : sellerId;
+  if (!owner) return { ok: false, error: "No autorizado." };
+  await supabase.from("seller_payment_methods").update({ is_primary: false }).eq("seller_id", owner);
+  const { error } = await supabase
+    .from("seller_payment_methods")
+    .update({ is_primary: true, is_active: true })
+    .eq("id", id)
+    .eq("seller_id", owner);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/panel/configuracion");
   revalidatePath("/admin/configuracion");
+  return { ok: true };
+}
+
+export async function setPaymentMethodActiveAction(id: string, sellerId: string, active: boolean) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller", "superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const owner = session.role === "seller" ? session.sellerId : sellerId;
+  if (!owner) return { ok: false, error: "No autorizado." };
+  const { error } = await supabase
+    .from("seller_payment_methods")
+    .update({ is_active: active })
+    .eq("id", id)
+    .eq("seller_id", owner);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/panel/configuracion");
+  revalidatePath("/admin/configuracion");
+  return { ok: true };
+}
+
+export async function changePasswordAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirm") ?? "");
+  if (password.length < 6) return { ok: false, error: "La clave debe tener al menos 6 caracteres." };
+  if (password !== confirm) return { ok: false, error: "Las claves no coinciden." };
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
 
@@ -823,14 +1546,28 @@ export async function upsertSupplierProductForm(formData: FormData): Promise<voi
   await upsertSupplierProductAction(formData);
 }
 
+export async function addWholesaleStockForm(formData: FormData): Promise<void> {
+  await addWholesaleStockAction(formData);
+}
+
+export async function upsertWholesaleSaleForm(formData: FormData): Promise<void> {
+  await upsertWholesaleSaleAction(formData);
+}
+
+export async function cancelWholesaleSaleForm(formData: FormData): Promise<void> {
+  await cancelWholesaleSaleAction(formData);
+}
+
 export async function placeCheckoutAction(formData: FormData) {
   const sellerSlug = String(formData.get("sellerSlug") ?? "");
   const productId = String(formData.get("productId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  const whatsapp = String(formData.get("whatsapp") ?? "").trim();
+  const whatsapp = whatsappParaGuardar(String(formData.get("whatsapp") ?? ""));
   const email = String(formData.get("email") ?? "").trim();
   const method = String(formData.get("method") ?? "yape") as "yape" | "plin";
   const file = formData.get("voucher") as File | null;
+
+  if (!whatsapp) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
 
   if (!isSupabaseConfigured()) {
     return { ok: true, code: "PS-DEMO-0001", demo: true, goToCustomerOrders: false };
@@ -852,6 +1589,10 @@ export async function placeCheckoutAction(formData: FormData) {
   const result = data as { order_id: string; code: string; seller_id: string };
   revalidatePath("/cliente");
   revalidatePath("/cliente/pedidos");
+  revalidatePath("/panel");
+  revalidatePath("/panel/pedidos");
+  revalidatePath("/panel/comprobantes");
+  revalidatePath("/admin/pedidos");
   if (file && file.size > 0) {
     const mime = voucherMime(file);
     if (!mime) return { ok: false, error: "El voucher debe ser PNG o JPEG." };

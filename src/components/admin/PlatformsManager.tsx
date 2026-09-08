@@ -13,7 +13,7 @@ import { PlatformName } from "@/components/ui/PlatformLogo";
 import { Badge } from "@/components/ui/StatusBadge";
 import type { Platform } from "@/lib/types";
 
-export function PlatformsManager({ platforms }: { platforms: Platform[] }) {
+export function PlatformsManager({ platforms, embedded = false }: { platforms: Platform[]; embedded?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Platform | null>(null);
@@ -21,11 +21,17 @@ export function PlatformsManager({ platforms }: { platforms: Platform[] }) {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Plataformas"
-        description="Catálogo maestro. Cada vendedor decide cuáles vender y a qué precio."
-        action={<Button onClick={() => { setEditing(null); setOpen(true); }}>Crear plataforma</Button>}
-      />
+      {embedded ? (
+        <div className="flex justify-end">
+          <Button onClick={() => { setEditing(null); setOpen(true); }}>Crear plataforma</Button>
+        </div>
+      ) : (
+        <PageHeader
+          title="Plataformas"
+          description="Catálogo maestro. Cada vendedor decide cuáles vender y a qué precio."
+          action={<Button onClick={() => { setEditing(null); setOpen(true); }}>Crear plataforma</Button>}
+        />
+      )}
       {message ? <p className="text-sm text-cyan-300">{message}</p> : null}
       <Card>
         <DataTable

@@ -52,20 +52,47 @@ const serviceStatus: Record<string, SubscriptionStatus> = {
 };
 
 export function mapSeller(row: Record<string, unknown>): Seller {
+  const logoPath = row.logo_path ? String(row.logo_path) : row.logoPath ? String(row.logoPath) : null;
+  const bannerPath = row.store_banner_path
+    ? String(row.store_banner_path)
+    : row.storeBannerPath
+      ? String(row.storeBannerPath)
+      : null;
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "") ?? "";
+  const version = row.updated_at ? String(row.updated_at) : "";
+  const publicFile = (path: string | null) =>
+    path && base
+      ? `${base}/storage/v1/object/public/seller-logos/${path.replace(/^\/+/, "")}?v=${encodeURIComponent(version || path)}`
+      : null;
   return {
     id: String(row.id),
     userId: String(row.profile_id ?? ""),
     name: String(row.name),
-    businessName: String(row.business_name),
+    businessName: String(row.business_name ?? row.businessName ?? ""),
     slug: String(row.slug),
-    email: String(row.email),
+    email: String(row.email ?? ""),
     whatsapp: String(row.whatsapp ?? ""),
     status: sellerStatus[String(row.status)] ?? "pendiente",
-    registeredAt: String(row.created_at),
-    yapeHolder: String(row.yape_holder ?? ""),
-    yapeNumber: String(row.yape_number ?? ""),
-    plinHolder: String(row.plin_holder ?? ""),
-    plinNumber: String(row.plin_number ?? ""),
+    registeredAt: String(row.created_at ?? new Date().toISOString()),
+    yapeHolder: String(row.yape_holder ?? row.yapeHolder ?? ""),
+    yapeNumber: String(row.yape_number ?? row.yapeNumber ?? ""),
+    plinHolder: String(row.plin_holder ?? row.plinHolder ?? ""),
+    plinNumber: String(row.plin_number ?? row.plinNumber ?? ""),
+    logoPath,
+    logoUrl: publicFile(logoPath),
+    storeMessage: String(row.store_message ?? row.storeMessage ?? ""),
+    storeBannerEnabled: row.store_banner_enabled !== false && row.storeBannerEnabled !== false,
+    storeBannerKicker: String(row.store_banner_kicker ?? row.storeBannerKicker ?? ""),
+    storeBannerTitle: String(row.store_banner_title ?? row.storeBannerTitle ?? ""),
+    storeBannerAccent: String(row.store_banner_accent ?? row.storeBannerAccent ?? ""),
+    storeBannerDescription: String(row.store_banner_description ?? row.storeBannerDescription ?? ""),
+    storeBannerPath: bannerPath,
+    storeBannerUrl: publicFile(bannerPath),
+    notifyLoginEmail: row.notify_login_email !== false,
+    notifyNewOrder: row.notify_new_order !== false,
+    notifyPaymentReview: row.notify_payment_review !== false,
+    notifyServiceExpiring: row.notify_service_expiring !== false,
+    notifyInventoryExpiring: row.notify_inventory_expiring !== false,
   };
 }
 
@@ -108,7 +135,14 @@ export function mapProduct(row: Record<string, unknown>, hideCost = false): Prod
     durationDays: Number(row.duration_days ?? row.durationDays ?? 30),
     active: String(row.status ?? "active") === "active" || row.active === true,
     stock: Number(row.stock ?? 0),
-    soldOut: String(row.status) === "sold_out" || row.soldOut === true,
+    soldOut:
+      String(row.status) === "sold_out" ||
+      row.soldOut === true ||
+      (Boolean(row.inventoryLinked || row.inventory_linked) && Number(row.stock ?? 0) <= 0),
+    compareAtPrice:
+      row.compare_at_price == null && row.compareAtPrice == null ? null : Number(row.compare_at_price ?? row.compareAtPrice),
+    onOffer: row.on_offer === true || row.onOffer === true,
+    inventoryLinked: row.inventory_linked === true || row.inventoryLinked === true,
   };
 }
 
@@ -129,6 +163,7 @@ export function mapOrder(
     status: orderStatus[String(row.order_status)] ?? "pendiente_pago",
     createdAt: String(row.created_at),
     whatsapp: extra?.whatsapp ?? "",
+    planName: row.duration_days ? `${Number(row.duration_days)} días` : undefined,
     deliveryNote: String(row.delivery_note ?? ""),
     deliveredAt: row.delivered_at ? String(row.delivered_at) : null,
   };

@@ -98,6 +98,9 @@ export type ProductOffer = {
   internalCost: number;
   stock: number;
   active: boolean;
+  onOffer: boolean;
+  compareAtPrice: number | null;
+  inventoryLinked: boolean;
   variants: Product[];
 };
 
@@ -120,6 +123,13 @@ export function groupProductOffers(list: Product[]): ProductOffer[] {
       internalCost: primary.internalCost,
       stock: primary.stock,
       active: variants.some((item) => item.active),
+      onOffer: variants.some((item) => item.onOffer),
+      compareAtPrice:
+        variants
+          .map((item) => item.compareAtPrice)
+          .filter((value): value is number => value != null && value > 0)
+          .sort((a, b) => a - b)[0] ?? null,
+      inventoryLinked: variants.some((item) => item.inventoryLinked),
       variants: ordered,
     };
   });

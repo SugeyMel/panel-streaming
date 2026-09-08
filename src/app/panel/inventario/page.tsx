@@ -5,17 +5,21 @@ import {
   loadProducts,
   loadServices,
   loadStreamingAccounts,
+  loadStoreOfferLinks,
+  loadMessageTemplates,
   panelScope,
 } from "@/lib/data/queries";
 
 export default async function SellerInventoryPage() {
   const { sellerId } = await panelScope();
-  const [products, platforms, accounts, services, customers] = await Promise.all([
+  const [products, platforms, accounts, services, customers, plantillas, offerLinks] = await Promise.all([
     loadProducts(sellerId),
     loadPlatforms(),
     loadStreamingAccounts(sellerId),
     loadServices({ sellerId }),
     loadCustomers(sellerId),
+    loadMessageTemplates(sellerId),
+    loadStoreOfferLinks(sellerId),
   ]);
   return (
     <InventoryAccountsManager
@@ -24,6 +28,8 @@ export default async function SellerInventoryPage() {
       services={services}
       customers={customers}
       products={products}
+      plantillas={plantillas}
+      offerLinks={offerLinks}
     />
   );
 }

@@ -1,28 +1,46 @@
-import { Card } from "@/components/ui/Card";
-import { OrdersTable } from "@/components/orders/OrdersTable";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { customerScope, loadOrders } from "@/lib/data/queries";
+import { CustomerOrdersBoard, type CustomerOrderCardData } from "@/components/orders/CustomerOrdersBoard";
+import { customerScope, loadCustomerById, loadOrders, loadPlatforms, loadProducts, loadServices } from "@/lib/data/queries";
+import { formatDateTime } from "@/lib/format";
+import { parseProfileSlot } from "@/lib/inventory-matrix";
+import { orderPlatformLabel } from "@/lib/platform-logos";
 
 export default async function CustomerOrdersPage() {
   const { customerId } = await customerScope();
-  const orders = await loadOrders({ customerId });
-  const delivered = orders.filter((item) => item.status === "entregado");
-  return (
-    <div className="space-y-4">
-      <PageHeader title="Mis pedidos" />
-      {delivered.map((item) => (
-        <Card key={item.id} className="border border-cyan-400/30 p-4 text-sm text-slate-200">
-          <p className="font-medium text-white">Servicio entregado · {item.code}</p>
-          <p className="mt-1">{item.deliveryNote || "El acceso ya está en Centro de acceso."}</p>
-          <a href="/cliente/acceso" className="mt-2 inline-block text-cyan-300">Ver acceso</a>
-        </Card>
-      ))}
-      <Card>
-        <OrdersTable
-          orders={orders.map((item) => ({ ...item, internalCost: 0 }))}
-          empty="Aún no hay pedidos en esta cuenta. Si compraste en la tienda con otro número, pide a tu vendedor que te cree el acceso con el mismo WhatsApp."
-        />
-      </Card>
-    </div>
-  );
+  const customer = await loadCustomerById(customerId);
+  const [orders, platforms, services, products] = await Promise.all([
+    loadOrders({ customerId }),
+    loadPlatforms(),
+    loadServices({ customerId }),
+    loadProducts(customer?.sellerId, true),
+  ]);
+
+  const cards: CustomerOrderCardData[] = orders.map((order) => {
+    const product = products.find((item) => item.id === order.productId);
+    const platformId = order.platformId || product?.platformId || "";
+    const platform = platforms.find((item) => item.id === platformId);
+    const service = services.find((item) => item.orderId === order.id);
+    const parsed = parseProfileSlot(service?.accessProfile);
+    const profileLabel = parsed.name || (parsed.slot ? `Perfil ${parsed.slot}` : null);
+    const planLabel =
+      product?.name ||
+      order.planName ||
+      (product?.durationDays ? `${product.durationDays} días` : "Plan");
+
+    return {
+      id: order.id,
+      code: order.code,
+      status: order.status,
+      amount: order.amount,
+      createdAt: order.createdAt,
+      deliveredAt: order.deliveredAt ?? null,
+      purchaseLabel: formatDateTime(order.createdAt),
+      deliveredLabel: order.deliveredAt ? formatDateTime(order.deliveredAt) : null,
+      platform: platform ?? order.platformName ?? platformId,
+      platformName: orderPlatformLabel({ platformId, platformName: order.platformName }, platforms),
+      planLabel,
+      profileLabel,
+    };
+  });
+
+  return <CustomerOrdersBoard orders={cards} />;
 }

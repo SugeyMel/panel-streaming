@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { CheckoutFlow } from "@/components/store/CheckoutFlow";
 import { getAppSession } from "@/lib/auth/get-session";
-import { loadCustomerById, loadPlatforms, loadStorefront } from "@/lib/data/queries";
+import { loadCustomerById, loadPaymentMethods, loadPlatforms, loadStorefront } from "@/lib/data/queries";
 import { groupProductOffers } from "@/lib/selectors";
 
 export default async function CheckoutPage({
@@ -20,6 +20,7 @@ export default async function CheckoutPage({
     getAppSession(),
   ]);
   if (!store) notFound();
+  const methods = await loadPaymentMethods(store.seller.id);
   const loggedCustomer = session.customerId ? await loadCustomerById(session.customerId) : null;
   const lockCustomer = Boolean(
     session.role === "customer" && loggedCustomer && loggedCustomer.sellerId === store.seller.id,
@@ -41,6 +42,7 @@ export default async function CheckoutPage({
         product={product}
         platform={platform}
         relatedProducts={relatedProducts}
+        methods={methods}
         customerName={lockCustomer ? loggedCustomer?.name ?? "" : ""}
         customerWhatsapp={lockCustomer ? loggedCustomer?.whatsapp ?? "" : ""}
         lockCustomer={lockCustomer}

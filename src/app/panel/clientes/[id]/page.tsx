@@ -4,10 +4,12 @@ import { CustomerStatusBadge } from "@/components/ui/StatusBadge";
 import { OrdersTable } from "@/components/orders/OrdersTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ServiceCard } from "@/components/services/ServiceCard";
-import { formatDate } from "@/lib/format";
-import { waLink, renewalMessage, supportMessage } from "@/lib/whatsapp";
+import { daysRemaining, formatDate } from "@/lib/format";
+import { waLink, reminderMessage, supportMessage } from "@/lib/whatsapp";
+import { whatsappParaMostrar } from "@/lib/clientes";
 import {
   loadCustomers,
+  loadMessageTemplates,
   loadOrders,
   loadPlatforms,
   loadServices,
@@ -21,11 +23,12 @@ export default async function SellerCustomerDetailPage({
 }) {
   const { id } = await params;
   const { sellerId } = await panelScope();
-  const [customers, services, orders, platforms] = await Promise.all([
+  const [customers, services, orders, platforms, plantillas] = await Promise.all([
     loadCustomers(sellerId),
     loadServices({ sellerId, customerId: id }),
     loadOrders({ sellerId, customerId: id }),
     loadPlatforms(),
+    loadMessageTemplates(sellerId),
   ]);
   const customer = customers.find((item) => item.id === id);
   if (!customer || (sellerId && customer.sellerId !== sellerId)) notFound();
@@ -34,7 +37,7 @@ export default async function SellerCustomerDetailPage({
     <div className="space-y-6">
       <PageHeader title={`Cliente: ${customer.name}`} action={<CustomerStatusBadge status={customer.status} />} />
       <Card className="grid gap-3 p-5 text-sm text-slate-300 sm:grid-cols-2">
-        <p>WhatsApp: <span className="text-white">{customer.whatsapp}</span></p>
+        <p>WhatsApp: <span className="text-white">{whatsappParaMostrar(customer.whatsapp)}</span></p>
         <p>Correo: <span className="text-white">{customer.email}</span></p>
         <p>Registro: <span className="text-white">{formatDate(customer.registeredAt)}</span></p>
         <a className="text-cyan-300" href={waLink(customer.whatsapp, supportMessage(customer.name))} target="_blank" rel="noreferrer">
@@ -52,7 +55,10 @@ export default async function SellerCustomerDetailPage({
                 className="mt-2 inline-block text-xs text-cyan-300"
                 href={waLink(
                   customer.whatsapp,
-                  renewalMessage(customer.name, platform.name, formatDate(subscription.endDate)),
+                  reminderMessage(customer.name, platform.name, formatDate(subscription.endDate), {
+                    dias: daysRemaining(subscription.endDate),
+                    plantillas,
+                  }),
                 )}
                 target="_blank"
                 rel="noreferrer"
@@ -65,7 +71,7 @@ export default async function SellerCustomerDetailPage({
       </div>
       <Card>
         <CardHeader title="Pedidos" />
-        <OrdersTable orders={orders} actionHref={(order) => `/panel/pedidos/${order.id}`} />
+        <OrdersTable orders={orders} actionHref="/panel/pedidos/{id}" />
       </Card>
     </div>
   );
