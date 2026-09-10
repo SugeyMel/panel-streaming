@@ -1,18 +1,19 @@
-import type {
-  Customer,
-  CustomerStatus,
-  Order,
-  OrderStatus,
-  PaymentStatus,
-  Platform,
-  Product,
-  Seller,
-  SellerStatus,
-  Subscription,
-  SubscriptionStatus,
+import {
+  DEFAULT_SUPPORT_HOURS,
+  type Customer,
+  type CustomerStatus,
+  type Order,
+  type OrderStatus,
+  type PaymentStatus,
+  type Platform,
+  type Product,
+  type Seller,
+  type SellerStatus,
+  type Subscription,
+  type SubscriptionStatus,
 } from "@/lib/types";
 import { serviceStatusFromDates } from "@/lib/format";
-import { platformLogoPublicUrl } from "@/lib/platform-logos";
+import { canonicalPlatformName, platformLogoPublicUrl } from "@/lib/platform-logos";
 
 const sellerStatus: Record<string, SellerStatus> = {
   active: "activo",
@@ -72,6 +73,7 @@ export function mapSeller(row: Record<string, unknown>): Seller {
     slug: String(row.slug),
     email: String(row.email ?? ""),
     whatsapp: String(row.whatsapp ?? ""),
+    supportHours: String(row.support_hours ?? row.supportHours ?? "").trim() || DEFAULT_SUPPORT_HOURS,
     status: sellerStatus[String(row.status)] ?? "pendiente",
     registeredAt: String(row.created_at ?? new Date().toISOString()),
     yapeHolder: String(row.yape_holder ?? row.yapeHolder ?? ""),
@@ -108,18 +110,26 @@ export function mapCustomer(row: Record<string, unknown>): Customer {
   };
 }
 
+function versionedPlatformImage(path: unknown, version: string) {
+  const stored = platformLogoPublicUrl(path ? String(path) : null);
+  if (!stored) return null;
+  return `${stored}${stored.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}`;
+}
+
 export function mapPlatform(row: Record<string, unknown>): Platform {
-  const stored = platformLogoPublicUrl(row.logo_path ? String(row.logo_path) : null);
   const version = row.updated_at ? String(row.updated_at) : "";
+  const slug = String(row.slug);
+  const name = String(row.name);
   return {
     id: String(row.id),
-    slug: String(row.slug),
-    name: String(row.name),
+    slug,
+    name: canonicalPlatformName({ slug, name }) || name,
     tagline: String(row.tagline ?? ""),
     available: Boolean(row.available),
     accentFrom: String(row.accent_from),
     accentTo: String(row.accent_to),
-    logoUrl: stored ? `${stored}${stored.includes("?") ? "&" : "?"}v=${encodeURIComponent(version)}` : null,
+    logoUrl: versionedPlatformImage(row.logo_path, version),
+    customerLogoUrl: versionedPlatformImage(row.customer_logo_path ?? row.customerLogoPath, version),
   };
 }
 

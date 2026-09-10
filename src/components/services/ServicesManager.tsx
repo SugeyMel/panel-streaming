@@ -129,7 +129,7 @@ export function ServicesManager({
           <input name="endDate" type="date" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
           <input name="costPrice" type="number" step="0.01" placeholder="Costo" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
           <input name="salePrice" type="number" step="0.01" placeholder="Precio venta" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
-          <input name="platformEmail" type="email" placeholder="Correo de la cuenta (Gmail de Netflix, Max, etc.)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          <input name="platformEmail" type="email" placeholder="Correo de la cuenta (Gmail de Netflix, HBO MAX, etc.)" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
           <select name="status" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2">
             <option value="active">Activo</option>
             <option value="expiring">Próximo a vencer</option>

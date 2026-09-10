@@ -10,6 +10,7 @@ export function AccountsPagination({
   onPage,
   filasPorPagina,
   onFilasPorPagina,
+  noun = "cuentas",
 }: {
   total: number;
   rangeStart: number;
@@ -19,11 +20,12 @@ export function AccountsPagination({
   onPage: (page: number) => void;
   filasPorPagina: FilasPorPagina;
   onFilasPorPagina: (value: FilasPorPagina) => void;
+  noun?: string;
 }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
       <p className="shrink-0 text-sm text-[#94A3B8]">
-        {total === 0 ? "Mostrando 0 - 0 de 0 cuentas" : `Mostrando ${rangeStart} - ${rangeEnd} de ${total} cuentas`}
+        {total === 0 ? `Mostrando 0 - 0 de 0 ${noun}` : `Mostrando ${rangeStart} - ${rangeEnd} de ${total} ${noun}`}
       </p>
       <label className="inline-flex shrink-0 items-center gap-2 text-sm text-[#94A3B8]">
         Mostrar

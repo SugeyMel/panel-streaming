@@ -9,7 +9,7 @@ export default async function AdminLayout({
 }) {
   const session = await getAppSession();
   return (
-    <DashboardShell title="Panel maestro" role="Admin" variant="admin" userName={session.name}>
+    <DashboardShell title="Panel maestro" role="Admin" variant="admin" userName={session.name} userEmail={session.email}>
       {children}
     </DashboardShell>
   );

@@ -13,6 +13,7 @@ function supabaseImageHost() {
 const supabaseHost = supabaseImageHost();
 
 const nextConfig: NextConfig = {
+  serverExternalPackages: ["xlsx"],
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

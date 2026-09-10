@@ -4,10 +4,13 @@ import { mapCustomer, mapOrder, mapPlatform, mapProduct, mapSeller, mapService }
 import { DEMO_CUSTOMER_ID, DEMO_SELLER_ID } from "@/lib/session";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { platformDisplayName } from "@/lib/platform-logos";
+import { platformDisplayName, REQUIRED_PLATFORM_SEEDS } from "@/lib/platform-logos";
 import { type CustomerRow } from "@/lib/selectors";
 import type {
+  ConnectedEmailAccount,
   Customer,
+  EmailAuditLog,
+  EmailCodeFilterPolicy,
   Order,
   Platform,
   Product,
@@ -20,11 +23,20 @@ import type {
   WholesaleStockEntry,
 } from "@/lib/types";
 import {
-  isMissingRelation,
+  compareWholesaleCatalog,
   mapWholesaleCatalogProduct,
   mapWholesaleSale,
   mapWholesaleStockEntry,
 } from "@/lib/wholesale";
+import { defaultEmailFilterPolicy } from "@/lib/email-code-filter";
+import {
+  demoEmailState,
+  inventoryRowsToMailboxes,
+  mapConnectedEmail,
+  mapEmailAuditLog,
+  mapEmailFilterPolicy,
+  missingEmailCodesSql,
+} from "@/lib/email-codes";
 import type { HomeImagesMap } from "@/lib/home-images";
 import { isHomeImageSlot } from "@/lib/home-images";
 import type { PlantillasWhatsapp, TipoPlantillaMensaje } from "@/lib/whatsapp";
@@ -34,12 +46,27 @@ export async function liveClient() {
   return createClient();
 }
 
+function wholesaleLedgerClient() {
+  return createServiceClient();
+}
+
 export async function loadPlatforms(): Promise<Platform[]> {
   const supabase = await liveClient();
   if (!supabase) return platforms;
   const { data, error } = await supabase.from("platforms").select("*").order("name");
   if (error) throw error;
-  return (data ?? []).map((row) => mapPlatform(row as Record<string, unknown>));
+  let rows = data ?? [];
+  const existing = new Set(rows.map((row) => String(row.slug ?? "").toLowerCase()));
+  const missing = REQUIRED_PLATFORM_SEEDS.filter((item) => !existing.has(item.slug));
+  if (missing.length) {
+    const writer = createServiceClient() ?? supabase;
+    const { error: insertError } = await writer.from("platforms").insert(missing.map((item) => ({ ...item })));
+    if (!insertError) {
+      const retry = await supabase.from("platforms").select("*").order("name");
+      if (!retry.error && retry.data) rows = retry.data;
+    }
+  }
+  return rows.map((row) => mapPlatform(row as Record<string, unknown>));
 }
 
 export async function loadSellers(): Promise<Seller[]> {
@@ -245,12 +272,155 @@ export async function loadStreamingAccounts(sellerId: string | null): Promise<St
   });
 }
 
+function emailTablesClient() {
+  return createServiceClient();
+}
+
+async function loadMailboxFallback(sellerId?: string | null): Promise<ConnectedEmailAccount[]> {
+  if (sellerId === null) return [];
+  const supabase = emailTablesClient() ?? (await liveClient());
+  if (!supabase) return [];
+  let query = supabase.from("streaming_accounts").select("id, seller_id, platform_id, email, supplier_note");
+  if (sellerId) query = query.eq("seller_id", sellerId);
+  const { data, error } = await query;
+  if (error) return [];
+  return inventoryRowsToMailboxes((data ?? []) as Record<string, unknown>[]);
+}
+
+export type EmailCodesBundle = {
+  emails: ConnectedEmailAccount[];
+  globalFilter: EmailCodeFilterPolicy;
+  sellerFilter: EmailCodeFilterPolicy;
+  lookups: EmailAuditLog[];
+  missingSql: boolean;
+};
+
+export async function loadConnectedEmails(sellerId?: string | null): Promise<ConnectedEmailAccount[]> {
+  if (sellerId === null) return [];
+  const supabase = await liveClient();
+  if (!supabase) {
+    const emails = demoEmailState().emails;
+    return sellerId ? emails.filter((item) => item.sellerId === sellerId) : emails;
+  }
+  const db = emailTablesClient() ?? supabase;
+  let query = db.from("connected_emails").select("*").order("created_at", { ascending: false });
+  if (sellerId) query = query.eq("seller_id", sellerId);
+  const { data, error } = await query;
+  if (error) {
+    if (missingEmailCodesSql(error.message)) return loadMailboxFallback(sellerId);
+    throw error;
+  }
+  return (data ?? []).map((row) => mapConnectedEmail(row as Record<string, unknown>));
+}
+
+export async function loadEmailFilterPolicy(sellerId: string | null): Promise<EmailCodeFilterPolicy> {
+  const fallback = defaultEmailFilterPolicy(sellerId);
+  const supabase = await liveClient();
+  if (!supabase) {
+    return (
+      demoEmailState().filters.find((item) => (item.sellerId ?? "") === (sellerId ?? "")) ?? fallback
+    );
+  }
+  const db = emailTablesClient() ?? supabase;
+  let query = db.from("email_code_filters").select("*");
+  query = sellerId ? query.eq("seller_id", sellerId) : query.is("seller_id", null);
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    if (missingEmailCodesSql(error.message)) return fallback;
+    throw error;
+  }
+  return data ? mapEmailFilterPolicy(data as Record<string, unknown>) : fallback;
+}
+
+export async function loadEmailLookups(sellerId?: string | null): Promise<EmailAuditLog[]> {
+  if (sellerId === null) return [];
+  const supabase = await liveClient();
+  if (!supabase) {
+    const lookups = demoEmailState().lookups;
+    return sellerId ? lookups.filter((item) => item.sellerId === sellerId) : lookups;
+  }
+  const db = emailTablesClient() ?? supabase;
+  let query = db.from("email_code_lookups").select("*").order("created_at", { ascending: false }).limit(80);
+  if (sellerId) query = query.eq("seller_id", sellerId);
+  const { data, error } = await query;
+  if (error) {
+    if (missingEmailCodesSql(error.message)) return [];
+    throw error;
+  }
+  return (data ?? []).map((row) => mapEmailAuditLog(row as Record<string, unknown>));
+}
+
+export async function loadEmailCodesBundle(sellerId?: string | null): Promise<EmailCodesBundle> {
+  const empty: EmailCodesBundle = {
+    emails: [],
+    globalFilter: defaultEmailFilterPolicy(null),
+    sellerFilter: defaultEmailFilterPolicy(sellerId ?? null),
+    lookups: [],
+    missingSql: false,
+  };
+  if (sellerId === null) return empty;
+
+  const supabase = await liveClient();
+  if (!supabase) {
+    const demo = demoEmailState();
+    return {
+      emails: sellerId ? demo.emails.filter((item) => item.sellerId === sellerId) : demo.emails,
+      globalFilter: demo.filters.find((item) => !item.sellerId) ?? defaultEmailFilterPolicy(null),
+      sellerFilter:
+        demo.filters.find((item) => item.sellerId === (sellerId ?? "")) ??
+        defaultEmailFilterPolicy(sellerId ?? null),
+      lookups: sellerId ? demo.lookups.filter((item) => item.sellerId === sellerId) : demo.lookups,
+      missingSql: false,
+    };
+  }
+
+  const db = emailTablesClient() ?? supabase;
+  const emailsQuery = sellerId
+    ? db.from("connected_emails").select("*").eq("seller_id", sellerId).order("created_at", { ascending: false })
+    : db.from("connected_emails").select("*").order("created_at", { ascending: false });
+  const lookupsQuery = sellerId
+    ? db
+        .from("email_code_lookups")
+        .select("*")
+        .eq("seller_id", sellerId)
+        .order("created_at", { ascending: false })
+        .limit(80)
+    : db.from("email_code_lookups").select("*").order("created_at", { ascending: false }).limit(80);
+
+  const [emailsRes, globalRes, sellerRes, lookupsRes] = await Promise.all([
+    emailsQuery,
+    db.from("email_code_filters").select("*").is("seller_id", null).maybeSingle(),
+    sellerId
+      ? db.from("email_code_filters").select("*").eq("seller_id", sellerId).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    lookupsQuery,
+  ]);
+
+  const missingSql = [emailsRes.error, globalRes.error, sellerRes.error, lookupsRes.error]
+    .map((error) => error?.message ?? "")
+    .some((message) => message && missingEmailCodesSql(message));
+
+  return {
+    emails: missingSql
+      ? await loadMailboxFallback(sellerId)
+      : (emailsRes.data ?? []).map((row) => mapConnectedEmail(row as Record<string, unknown>)),
+    globalFilter: globalRes.data
+      ? mapEmailFilterPolicy(globalRes.data as Record<string, unknown>)
+      : defaultEmailFilterPolicy(null),
+    sellerFilter: sellerRes.data
+      ? mapEmailFilterPolicy(sellerRes.data as Record<string, unknown>)
+      : defaultEmailFilterPolicy(sellerId ?? null),
+    lookups: missingSql ? [] : (lookupsRes.data ?? []).map((row) => mapEmailAuditLog(row as Record<string, unknown>)),
+    missingSql,
+  };
+}
+
 export async function loadCustomerRows(sellerId?: string | null): Promise<CustomerRow[]> {
-  const [list, services, allOrders, allSellers] = await Promise.all([
-    loadCustomers(sellerId),
-    loadServices(sellerId ? { sellerId } : undefined),
-    loadOrders(sellerId ? { sellerId } : undefined),
-    loadSellers(),
+  const list = await loadCustomers(sellerId);
+  const [services, allOrders, allSellers] = await Promise.all([
+    loadServices(sellerId ? { sellerId } : undefined).catch(() => []),
+    loadOrders(sellerId ? { sellerId } : undefined).catch(() => []),
+    sellerId ? Promise.resolve([]) : loadSellers().catch(() => []),
   ]);
   return list.map((customer) => {
     const customerServices = services.filter((item) => item.customerId === customer.id);
@@ -320,54 +490,74 @@ export async function loadSuppliers(): Promise<Supplier[]> {
   });
 }
 
+function wholesaleAbort() {
+  return AbortSignal.timeout(8000);
+}
+
 export async function loadWholesaleSales(): Promise<WholesaleSale[]> {
   const supabase = await liveClient();
   if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("wholesale_sales")
-    .select("*")
-    .order("purchased_at", { ascending: false });
-  if (error) {
-    if (isMissingRelation(error.message)) return [];
-    throw error;
+  try {
+    const { data, error } = await supabase
+      .from("wholesale_sales")
+      .select("*")
+      .order("purchased_at", { ascending: false })
+      .abortSignal(wholesaleAbort());
+    if (error) return [];
+    return (data ?? []).map((row) => mapWholesaleSale(row as Record<string, unknown>));
+  } catch {
+    return [];
   }
-  return (data ?? []).map((row) => mapWholesaleSale(row as Record<string, unknown>));
+}
+
+async function loadWholesaleLedger(): Promise<{ entries: WholesaleStockEntry[]; sales: WholesaleSale[] }> {
+  const supabase = wholesaleLedgerClient() ?? (await liveClient());
+  if (!supabase) return { entries: [], sales: [] };
+  try {
+    const [entriesRes, salesRes] = await Promise.all([
+      supabase.from("wholesale_stock_entries").select("*").abortSignal(wholesaleAbort()),
+      supabase.from("wholesale_sales").select("*").abortSignal(wholesaleAbort()),
+    ]);
+    return {
+      entries: (entriesRes.data ?? []).map((row) => mapWholesaleStockEntry(row as Record<string, unknown>)),
+      sales: (salesRes.data ?? []).map((row) => mapWholesaleSale(row as Record<string, unknown>)),
+    };
+  } catch {
+    return { entries: [], sales: [] };
+  }
 }
 
 export async function loadWholesaleStockEntries(): Promise<WholesaleStockEntry[]> {
-  const supabase = await liveClient();
-  if (!supabase) return [];
-  const { data, error } = await supabase
-    .from("wholesale_stock_entries")
-    .select("*")
-    .order("received_at", { ascending: false });
-  if (error) {
-    if (isMissingRelation(error.message)) return [];
-    throw error;
-  }
-  return (data ?? []).map((row) => mapWholesaleStockEntry(row as Record<string, unknown>));
+  const { entries } = await loadWholesaleLedger();
+  return entries;
 }
 
 export async function loadSupplierProducts(): Promise<WholesaleCatalogProduct[]> {
   const supabase = await liveClient();
   if (!supabase) return [];
-  const [entries, sales] = await Promise.all([loadWholesaleStockEntries(), loadWholesaleSales()]);
-  const { data, error } = await supabase.from("supplier_products").select("*").order("name");
-  if (error) {
-    const missingColumn = /column .* does not exist|image_path/i.test(error.message);
-    if (missingColumn) {
+  const { entries, sales } = await loadWholesaleLedger();
+  try {
+    const { data, error } = await supabase
+      .from("supplier_products")
+      .select("*")
+      .order("name")
+      .abortSignal(wholesaleAbort());
+    if (error) {
+      const missingColumn = /column .* does not exist|image_path/i.test(error.message);
+      if (!missingColumn) return [];
       const retry = await supabase
         .from("supplier_products")
-        .select("id, supplier_id, platform_id, name, wholesale_price, status, notes")
-        .order("name");
-      if (retry.error) throw retry.error;
+        .select("id, supplier_id, platform_id, name, description, wholesale_price, cost_price, offer_kind, status, notes, updated_at")
+        .abortSignal(wholesaleAbort());
+      if (retry.error) return [];
       return (retry.data ?? []).map((row) =>
         mapWholesaleCatalogProduct(row as Record<string, unknown>, entries, sales),
-      );
+      ).sort(compareWholesaleCatalog);
     }
-    throw error;
+    return (data ?? []).map((row) => mapWholesaleCatalogProduct(row as Record<string, unknown>, entries, sales)).sort(compareWholesaleCatalog);
+  } catch {
+    return [];
   }
-  return (data ?? []).map((row) => mapWholesaleCatalogProduct(row as Record<string, unknown>, entries, sales));
 }
 
 export async function loadCustomerById(id: string | null) {

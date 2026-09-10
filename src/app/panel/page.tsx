@@ -10,6 +10,7 @@ import {
   panelScope,
 } from "@/lib/data/queries";
 import { paidSalesFromOrders } from "@/lib/sales-performance";
+import { wholesalePricing } from "@/lib/wholesale";
 
 export default async function SellerDashboardPage() {
   const { session, sellerId } = await panelScope();
@@ -27,13 +28,21 @@ export default async function SellerDashboardPage() {
   ).length;
   const wholesaleItems: WholesalePreview[] = supplierProducts
     .filter((row) => row.status === "active")
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      wholesalePrice: row.wholesalePrice,
-      imageUrl: row.imageUrl,
-      platform: platforms.find((item) => item.id === (row.platformId ?? "")) ?? null,
-    }));
+    .map((row) => {
+      const pricing = wholesalePricing(row);
+      return {
+        id: row.id,
+        name: row.name,
+        wholesalePrice: row.wholesalePrice,
+        fromPrice: pricing.fromPrice,
+        hasPackDeal: pricing.hasPackDeal,
+        bulkQty: pricing.bulkQty,
+        imageUrl: row.imageUrl,
+        available: row.available,
+        sold: row.sold,
+        platform: platforms.find((item) => item.id === (row.platformId ?? "")) ?? null,
+      };
+    });
 
   return (
     <SellerMobileHome

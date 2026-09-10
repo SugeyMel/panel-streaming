@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { setSellerStatusAction, upsertSellerAction } from "@/app/actions/business";
 import {
@@ -22,6 +23,7 @@ import {
 } from "@/components/icons";
 import { Button } from "@/components/ui/Button";
 import { ConfirmationDialog, Modal } from "@/components/ui/Modal";
+import { RegisteredFlash } from "@/components/ui/RegisteredFlash";
 import { WhatsAppInput } from "@/components/ui/WhatsAppInput";
 import { whatsappParaMostrar } from "@/lib/clientes";
 import { sellerStatusLabel } from "@/lib/format";
@@ -41,6 +43,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ];
 
 export function SellersManager({ sellers }: { sellers: Seller[] }) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("todos");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -49,6 +52,7 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
   const [confirm, setConfirm] = useState<Seller | null>(null);
   const [cobro, setCobro] = useState<Seller | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [registered, setRegistered] = useState(false);
 
   const activos = sellers.filter((item) => item.status === "activo").length;
   const rentalSoon = 0;
@@ -193,10 +197,15 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
         <form
           className="space-y-3"
           action={async (formData) => {
+            const wasCreate = !editing;
             if (editing) formData.set("id", editing.id);
             const result = await upsertSellerAction(formData);
             setMessage(result.ok ? "Guardado." : result.error ?? "No se pudo guardar");
-            if (result.ok) setOpen(false);
+            if (result.ok) {
+              setOpen(false);
+              router.refresh();
+              if (wasCreate) setRegistered(true);
+            }
           }}
         >
           <input name="name" defaultValue={editing?.name} placeholder="Nombre" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
@@ -237,6 +246,7 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
           <span className="text-white">{cobro?.name}</span>.
         </p>
       </Modal>
+      <RegisteredFlash open={registered} onClose={() => setRegistered(false)} />
     </div>
   );
 }

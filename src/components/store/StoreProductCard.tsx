@@ -44,10 +44,10 @@ export function StoreProductCard({
         badge={
           <>
             {offer.onOffer ? (
-              <p className="mt-1 text-[10px] font-semibold text-orange-300">🔥 OFERTA</p>
+              <p className="mb-0.5 text-[10px] leading-none font-semibold text-orange-300">🔥 OFERTA</p>
             ) : null}
             {!offer.active ? (
-              <p className="mt-1 text-[10px] font-medium text-amber-300">Inactivo</p>
+              <p className="mb-0.5 text-[10px] leading-none font-medium text-amber-300">Inactivo</p>
             ) : null}
           </>
         }

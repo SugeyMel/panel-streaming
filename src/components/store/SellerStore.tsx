@@ -13,6 +13,7 @@ import {
   UsersIcon,
 } from "@/components/icons";
 import { StoreProductCard } from "@/components/store/StoreProductCard";
+import { WhatsAppBubble } from "@/components/store/WhatsAppBubble";
 import { groupProductOffers, type ProductOffer } from "@/lib/selectors";
 import {
   STORE_CATEGORIES,
@@ -20,6 +21,7 @@ import {
   storeBannerCopy,
   type StoreCategoryId,
 } from "@/lib/store-catalog";
+import { waLink } from "@/lib/whatsapp";
 import type { Platform, Product, Seller } from "@/lib/types";
 
 export function SellerStore({
@@ -64,6 +66,13 @@ export function SellerStore({
     help: "/login",
     account: "/login",
   };
+  const supportWa =
+    !manageMode && seller.whatsapp
+      ? waLink(
+          seller.whatsapp,
+          `Hola ${seller.businessName || seller.name}, vengo de la tienda y quiero información.`,
+        )
+      : "";
 
   const visible = offers.filter((offer) => {
     const platform = platformOf(offer.platformId);
@@ -164,10 +173,10 @@ export function SellerStore({
           </p>
         ) : null}
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-3">
-          <TrustItem icon={<ClockIcon className="h-4 w-4" />} title="Entrega rápida" hint="En minutos" />
-          <TrustItem icon={<LockIcon className="h-4 w-4" />} title="Pago seguro" hint="Yape, Plin y bancos" />
-          <TrustItem icon={<SupportIcon className="h-4 w-4" />} title="Soporte" hint="Te ayudamos siempre" />
+        <div className="mt-2.5 grid grid-cols-3 gap-1">
+          <TrustItem icon={<ClockIcon className="h-[7px] w-[7px]" />} title="Entrega rápida" hint="En minutos" />
+          <TrustItem icon={<LockIcon className="h-[7px] w-[7px]" />} title="Pago seguro" hint="Yape, Plin y bancos" />
+          <TrustItem icon={<SupportIcon className="h-[7px] w-[7px]" />} title="Soporte" hint="Te ayudamos siempre" />
         </div>
       </div>
 
@@ -182,6 +191,7 @@ export function SellerStore({
           </div>
         </nav>
       ) : null}
+      {supportWa ? <WhatsAppBubble href={supportWa} /> : null}
     </div>
   );
 }
@@ -222,13 +232,13 @@ function TrustItem({
   hint: string;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-[#253047] bg-[#111827] px-3 py-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2563EB]/20 text-[#60A5FA]">
+    <div className="flex min-w-0 flex-col items-center gap-[3px] rounded-lg border border-[#253047] bg-[#111827] px-[3px] py-[5px] text-center sm:flex-row sm:items-center sm:gap-1.5 sm:px-1.5 sm:py-1.5 sm:text-left">
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#2563EB]/20 text-[#60A5FA] sm:h-[18px] sm:w-[18px]">
         {icon}
       </span>
-      <div>
-        <p className="text-sm font-semibold text-[#F1F5F9]">{title}</p>
-        <p className="text-[12px] text-[#94A3B8]">{hint}</p>
+      <div className="min-w-0">
+        <p className="truncate text-[9px] font-semibold leading-none text-[#F1F5F9] sm:text-[11px]">{title}</p>
+        <p className="mt-px truncate text-[8px] leading-none text-[#94A3B8] sm:text-[10px]">{hint}</p>
       </div>
     </div>
   );

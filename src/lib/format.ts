@@ -150,6 +150,7 @@ export const supportStatusLabel: Record<SupportStatus, string> = {
 };
 
 export const emailConnectionLabel: Record<EmailConnectionStatus, string> = {
+  registrado: "Registrado",
   conectado: "Conectado",
   requiere_reconexion: "Requiere reconexión",
   desconectado: "Desconectado",

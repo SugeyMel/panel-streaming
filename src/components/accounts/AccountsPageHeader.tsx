@@ -6,11 +6,13 @@ export function AccountsPageHeader({
   subtitle,
   onFiltros,
   onAgregar,
+  addLabel = "+ Agregar cuenta",
 }: {
   title: string;
   subtitle: string;
   onFiltros: () => void;
   onAgregar: () => void;
+  addLabel?: string;
 }) {
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -24,7 +26,7 @@ export function AccountsPageHeader({
           Filtros avanzados
         </Button>
         <Button type="button" variant="gradient" onClick={onAgregar}>
-          + Agregar cuenta
+          {addLabel.startsWith("+") ? addLabel : `+ ${addLabel}`}
         </Button>
       </div>
     </div>

@@ -216,6 +216,18 @@ function BusinessSection({ seller, onMessage }: { seller: Seller; onMessage: (va
         <Field label="WhatsApp de atención">
           <WhatsAppInput name="whatsapp" defaultValue={seller.whatsapp ?? ""} required />
         </Field>
+        <Field label="Horario de atención">
+          <input
+            name="supportHours"
+            defaultValue={seller.supportHours}
+            placeholder="Lun a Dom · 8:00 am – 11:00 pm"
+            maxLength={80}
+            className="ui-field"
+          />
+        </Field>
+        <p className="-mt-1 text-[11px] text-[#94A3B8] sm:col-span-2">
+          Se muestra debajo del botón de WhatsApp en el panel del cliente.
+        </p>
         <Field label="Enlace de mi tienda">
           <CopyField value={path} />
         </Field>

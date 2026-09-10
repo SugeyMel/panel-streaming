@@ -14,7 +14,11 @@ import {
 import { uiCustomerStatusToDb, uiSellerStatusToDb } from "@/lib/db/map";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import type { CustomerStatus, SellerStatus } from "@/lib/types";
+import { supplierProductImagePublicUrl } from "@/lib/supplier-product-images";
+import { writeSupplierProductImage } from "@/lib/supplier-product-upload";
+import { DEFAULT_SUPPORT_HOURS, type CustomerStatus, type SellerStatus } from "@/lib/types";
+import { parsePricingToken, wholesalePricing, withPricingToken, withSortToken, nextWholesaleSortOrder } from "@/lib/wholesale";
+import { canonicalPlatformName } from "@/lib/platform-logos";
 
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg"]);
 const ALLOWED_LOGO_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -22,7 +26,10 @@ const MAX_VOUCHER_BYTES = 5 * 1024 * 1024;
 const MAX_LOGO_BYTES = 8 * 1024 * 1024;
 const MAX_HOME_IMAGE_BYTES = 8 * 1024 * 1024;
 const PLATFORM_LOGO_BUCKET = "platform-logos";
-const SUPPLIER_PRODUCT_IMAGE_BUCKET = "supplier-product-images";
+const CUSTOMER_LOGO_SQL_HINT =
+  "Falta ejecutar el SQL 0029_platform_customer_logo.sql en Supabase para el logo cuadrado de Clientes.";
+const SUPPORT_HOURS_SQL_HINT =
+  "Falta ejecutar el SQL 0031_seller_support_hours.sql en Supabase para el horario de atención.";
 const PAYMENT_QR_BUCKET = "seller-qr";
 const SELLER_LOGO_BUCKET = "seller-logos";
 const MAX_QR_BYTES = 2 * 1024 * 1024;
@@ -51,6 +58,10 @@ function logoExt(mime: string) {
   return "jpg";
 }
 
+function missingCustomerLogoColumn(message?: string) {
+  return /customer_logo_path/i.test(message ?? "");
+}
+
 function ensureLive() {
   if (!isSupabaseConfigured()) {
     return { ok: false as const, error: "Supabase no está configurado. La acción quedó en modo demo." };
@@ -58,19 +69,41 @@ function ensureLive() {
   return null;
 }
 
+function intendedRoleFits(intended: string, role: string) {
+  if (intended === "admin") return role === "superadmin" || role === "support";
+  if (intended === "seller") return role === "seller";
+  if (intended === "customer") return role === "customer";
+  return true;
+}
+
+function intendedRoleLabel(intended: string) {
+  if (intended === "admin") return "administrador";
+  if (intended === "seller") return "vendedor";
+  if (intended === "customer") return "cliente";
+  return "ese rol";
+}
+
 export async function signInAction(formData: FormData) {
   const identifier = String(formData.get("identifier") ?? formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const intendedRole = String(formData.get("intendedRole") ?? "").trim();
   if (!identifier || !password) {
     return { ok: false, error: "Celular o correo, y clave, son obligatorios." };
   }
 
   if (!isSupabaseConfigured()) {
-    const dest = identifier.includes("admin")
-      ? "/admin"
-      : identifier.includes("cliente") || identifier.includes("carlos") || isPhoneLogin(identifier)
-        ? "/cliente"
-        : "/panel";
+    const dest =
+      intendedRole === "admin"
+        ? "/admin"
+        : intendedRole === "seller"
+          ? "/panel"
+          : intendedRole === "customer"
+            ? "/cliente"
+            : identifier.includes("admin")
+              ? "/admin"
+              : identifier.includes("cliente") || identifier.includes("carlos") || isPhoneLogin(identifier)
+                ? "/cliente"
+                : "/panel";
     redirect(dest);
   }
 
@@ -82,6 +115,14 @@ export async function signInAction(formData: FormData) {
   if (error) return { ok: false, error: "Celular/correo o clave incorrectos." };
 
   const session = await getAppSession();
+  if (intendedRole && !intendedRoleFits(intendedRole, session.role)) {
+    await supabase.auth.signOut();
+    return {
+      ok: false,
+      error: `Esa cuenta no es de ${intendedRoleLabel(intendedRole)}. Elige la pestaña correcta.`,
+    };
+  }
+
   const next = String(formData.get("next") ?? "");
   const safeNext =
     next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "";
@@ -154,10 +195,13 @@ export async function upsertPlatformAction(formData: FormData) {
   requireRole(session, ["superadmin"]);
   const supabase = await createClient();
   if (!supabase) return { ok: false, error: "Sin cliente" };
+  const db = supabase;
   const id = String(formData.get("id") ?? "");
+  const rawName = String(formData.get("name") ?? "").trim();
+  const slug = String(formData.get("slug") ?? "").trim();
   const payload = {
-    name: String(formData.get("name") ?? "").trim(),
-    slug: String(formData.get("slug") ?? "").trim(),
+    name: canonicalPlatformName({ name: rawName, slug }) || rawName,
+    slug,
     tagline: String(formData.get("tagline") ?? ""),
     available: String(formData.get("available") ?? "true") === "true",
   };
@@ -174,35 +218,93 @@ export async function upsertPlatformAction(formData: FormData) {
   }
 
   const file = formData.get("logo");
+  const customerFile = formData.get("customerLogo");
   const removeLogo = String(formData.get("removeLogo") ?? "") === "1";
-  const hasFile = file instanceof File && file.size > 0;
-  const { data: current } = await supabase.from("platforms").select("logo_path").eq("id", platformId).maybeSingle();
-  const previousPath = current?.logo_path ? String(current.logo_path) : null;
+  const removeCustomerLogo = String(formData.get("removeCustomerLogo") ?? "") === "1";
+  const hasCustomerFile = customerFile instanceof File && customerFile.size > 0;
   const uploader = createServiceClient() ?? supabase;
 
-  if (removeLogo && !hasFile) {
-    if (previousPath) {
-      await uploader.storage.from(PLATFORM_LOGO_BUCKET).remove([previousPath]);
+  const currentSelect = await supabase
+    .from("platforms")
+    .select("logo_path, customer_logo_path")
+    .eq("id", platformId)
+    .maybeSingle();
+
+  let previousPath: string | null = null;
+  let previousCustomerPath: string | null = null;
+  if (currentSelect.error && missingCustomerLogoColumn(currentSelect.error.message)) {
+    if (hasCustomerFile || removeCustomerLogo) return { ok: false, error: CUSTOMER_LOGO_SQL_HINT };
+    const fallback = await supabase.from("platforms").select("logo_path").eq("id", platformId).maybeSingle();
+    previousPath = fallback.data?.logo_path ? String(fallback.data.logo_path) : null;
+  } else if (currentSelect.error) {
+    return { ok: false, error: currentSelect.error.message };
+  } else {
+    previousPath = currentSelect.data?.logo_path ? String(currentSelect.data.logo_path) : null;
+    const raw = (currentSelect.data as { customer_logo_path?: string | null } | null)?.customer_logo_path;
+    previousCustomerPath = raw ? String(raw) : null;
+  }
+
+  async function savePlatformImage(
+    incoming: FormDataEntryValue | null,
+    remove: boolean,
+    previous: string | null,
+    column: "logo_path" | "customer_logo_path",
+    stem: "logo" | "clientes",
+  ) {
+    const hasIncoming = incoming instanceof File && incoming.size > 0;
+    if (remove && !hasIncoming) {
+      if (previous) await uploader.storage.from(PLATFORM_LOGO_BUCKET).remove([previous]);
+      const { error } = await db.from("platforms").update({ [column]: null }).eq("id", platformId);
+      if (error) {
+        if (column === "customer_logo_path" && missingCustomerLogoColumn(error.message)) {
+          return CUSTOMER_LOGO_SQL_HINT;
+        }
+        return error.message;
+      }
+      return null;
     }
-    const { error } = await supabase.from("platforms").update({ logo_path: null }).eq("id", platformId);
-    if (error) return { ok: false, error: error.message };
-  } else if (hasFile && file instanceof File) {
-    const mime = logoMime(file);
-    if (!mime) return { ok: false, error: "El logo debe ser PNG, WEBP o JPG. SVG no está permitido." };
-    if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "El logo no puede superar 8 MB." };
-    const path = `${platformId}/logo.${logoExt(mime)}`;
-    if (previousPath && previousPath !== path) {
-      await uploader.storage.from(PLATFORM_LOGO_BUCKET).remove([previousPath]);
+    if (!hasIncoming || !(incoming instanceof File)) return null;
+    const mime = logoMime(incoming);
+    if (!mime) return "El logo debe ser PNG, WEBP o JPG. SVG no está permitido.";
+    if (incoming.size > MAX_LOGO_BYTES) return "El logo no puede superar 8 MB.";
+    const path = `${platformId}/${stem}.${logoExt(mime)}`;
+    if (previous && previous !== path) {
+      await uploader.storage.from(PLATFORM_LOGO_BUCKET).remove([previous]);
     }
     const { error: uploadError } = await uploader.storage
       .from(PLATFORM_LOGO_BUCKET)
-      .upload(path, file, { upsert: true, contentType: mime });
-    if (uploadError) return { ok: false, error: uploadError.message };
-    const { error } = await supabase.from("platforms").update({ logo_path: path }).eq("id", platformId);
-    if (error) return { ok: false, error: error.message };
+      .upload(path, incoming, { upsert: true, contentType: mime });
+    if (uploadError) return uploadError.message;
+    const { error } = await db.from("platforms").update({ [column]: path }).eq("id", platformId);
+    if (error) {
+      if (column === "customer_logo_path" && missingCustomerLogoColumn(error.message)) {
+        return CUSTOMER_LOGO_SQL_HINT;
+      }
+      return error.message;
+    }
+    return null;
   }
 
+  const storeError = await savePlatformImage(file, removeLogo, previousPath, "logo_path", "logo");
+  if (storeError) return { ok: false, error: storeError };
+  const customerError = await savePlatformImage(
+    customerFile,
+    removeCustomerLogo,
+    previousCustomerPath,
+    "customer_logo_path",
+    "clientes",
+  );
+  if (customerError) return { ok: false, error: customerError };
+
   revalidatePath("/admin/plataformas");
+  revalidatePath("/admin/mayorista");
+  revalidatePath("/panel");
+  revalidatePath("/panel/productos");
+  revalidatePath("/panel/inventario");
+  revalidatePath("/panel/clientes");
+  revalidatePath("/cliente");
+  revalidatePath("/cliente/comprar");
+  revalidatePath("/tienda", "layout");
   revalidatePath("/");
   return { ok: true };
 }
@@ -503,17 +605,45 @@ export async function upsertSupplierProductAction(formData: FormData) {
   const id = String(formData.get("id") ?? "").trim();
   const supplierId = String(formData.get("supplierId") ?? "").trim();
   const offerKind = String(formData.get("offerKind") ?? "perfil") === "cuenta_completa" ? "cuenta_completa" : "perfil";
+  const unitPrice = Number(String(formData.get("unitPrice") ?? "0").replace(",", "."));
+  const bulkQtyRaw = Number(formData.get("bulkQty") ?? 3);
+  const bulkQty = Number.isInteger(bulkQtyRaw) && bulkQtyRaw >= 2 ? bulkQtyRaw : 3;
+  let currentRow: { notes?: string | null; image_path?: string | null } | null = null;
+  if (id) {
+    const withImage = await supabase.from("supplier_products").select("notes, image_path").eq("id", id).maybeSingle();
+    if (withImage.error && /image_path/i.test(withImage.error.message)) {
+      const withoutImage = await supabase.from("supplier_products").select("notes").eq("id", id).maybeSingle();
+      currentRow = withoutImage.data;
+    } else {
+      currentRow = withImage.data;
+    }
+  }
+  const currentNotes = currentRow?.notes ? String(currentRow.notes) : "";
+  let nextOrder = 0;
+  if (!id) {
+    const listed = await supabase.from("supplier_products").select("sort_order, notes");
+    const orderRows =
+      listed.error && /sort_order/i.test(listed.error.message)
+        ? ((await supabase.from("supplier_products").select("notes")).data ?? [])
+        : (listed.data ?? []);
+    nextOrder = nextWholesaleSortOrder(orderRows);
+  }
   const payload: Record<string, unknown> = {
     supplier_id: supplierId || null,
     platform_id: String(formData.get("platformId") ?? "") || null,
     name: String(formData.get("name") ?? "").trim(),
     description: String(formData.get("description") ?? ""),
     wholesale_price: Number(formData.get("wholesalePrice") ?? 0),
+    unit_price: unitPrice,
+    bulk_qty: bulkQty,
     cost_price: Number(formData.get("costPrice") ?? 0),
     offer_kind: offerKind,
     status: String(formData.get("status") ?? "active"),
-    notes: String(formData.get("notes") ?? ""),
+    notes: id
+      ? withPricingToken(currentNotes, Number.isFinite(unitPrice) ? unitPrice : 0, bulkQty)
+      : withSortToken(withPricingToken(currentNotes, Number.isFinite(unitPrice) ? unitPrice : 0, bulkQty), nextOrder),
   };
+  if (!id) payload.sort_order = nextOrder;
   if (!payload.name) {
     return { ok: false, error: "El nombre del producto es obligatorio." };
   }
@@ -522,7 +652,15 @@ export async function upsertSupplierProductAction(formData: FormData) {
     "Falta ejecutar el SQL 0022_wholesale_catalog_sales.sql en Supabase para costo, tipo y descripción.";
   let productId = id;
   if (id) {
-    const { error } = await supabase.from("supplier_products").update(payload).eq("id", id);
+    let { error } = await supabase.from("supplier_products").update(payload).eq("id", id);
+    if (error && /unit_price|bulk_qty/i.test(error.message)) {
+      const fallback = { ...payload };
+      delete fallback.unit_price;
+      delete fallback.bulk_qty;
+      delete fallback.sort_order;
+      fallback.notes = withPricingToken(currentNotes, unitPrice, bulkQty);
+      ({ error } = await supabase.from("supplier_products").update(fallback).eq("id", id));
+    }
     if (error) {
       return {
         ok: false,
@@ -530,7 +668,15 @@ export async function upsertSupplierProductAction(formData: FormData) {
       };
     }
   } else {
-    const { data, error } = await supabase.from("supplier_products").insert(payload).select("id").single();
+    let { data, error } = await supabase.from("supplier_products").insert(payload).select("id").single();
+    if (error && /unit_price|bulk_qty|sort_order/i.test(error.message)) {
+      const fallback = { ...payload };
+      delete fallback.unit_price;
+      delete fallback.bulk_qty;
+      delete fallback.sort_order;
+      fallback.notes = withSortToken(withPricingToken(currentNotes, unitPrice, bulkQty), nextOrder);
+      ({ data, error } = await supabase.from("supplier_products").insert(fallback).select("id").single());
+    }
     if (error || !data) {
       return {
         ok: false,
@@ -542,58 +688,94 @@ export async function upsertSupplierProductAction(formData: FormData) {
     productId = String(data.id);
   }
 
-  const file = formData.get("image");
+  const file = formData.getAll("image").find((item): item is File => item instanceof File && item.size > 0) ?? null;
   const removeImage = String(formData.get("removeImage") ?? "") === "1";
-  const hasFile = file instanceof File && file.size > 0;
-  const { data: current } = await supabase.from("supplier_products").select("image_path").eq("id", productId).maybeSingle();
-  const previousPath = current?.image_path ? String(current.image_path) : null;
-  const uploader = createServiceClient() ?? supabase;
-
-  if (removeImage && !hasFile) {
-    if (previousPath) {
-      await uploader.storage.from(SUPPLIER_PRODUCT_IMAGE_BUCKET).remove([previousPath]);
-    }
-    const { error } = await supabase.from("supplier_products").update({ image_path: null }).eq("id", productId);
-    if (error) {
-      return {
-        ok: false,
-        error: /image_path/i.test(error.message)
-          ? "Falta ejecutar el SQL 0020_supplier_product_images.sql en Supabase para guardar fotos mayoristas."
-          : error.message,
-      };
-    }
-  } else if (hasFile && file instanceof File) {
-    const mime = logoMime(file);
-    if (!mime) return { ok: false, error: "La imagen debe ser PNG, WEBP o JPG. SVG no está permitido." };
-    if (file.size > MAX_LOGO_BYTES) return { ok: false, error: "La imagen no puede superar 8 MB." };
-    const path = `${productId}/image.${logoExt(mime)}`;
-    if (previousPath && previousPath !== path) {
-      await uploader.storage.from(SUPPLIER_PRODUCT_IMAGE_BUCKET).remove([previousPath]);
-    }
-    const { error: uploadError } = await uploader.storage
-      .from(SUPPLIER_PRODUCT_IMAGE_BUCKET)
-      .upload(path, file, { upsert: true, contentType: mime });
-    if (uploadError) return { ok: false, error: uploadError.message };
-    const { error } = await supabase.from("supplier_products").update({ image_path: path }).eq("id", productId);
-    if (error) {
-      return {
-        ok: false,
-        error: /image_path/i.test(error.message)
-          ? "Falta ejecutar el SQL 0020_supplier_product_images.sql en Supabase para guardar fotos mayoristas."
-          : error.message,
-      };
-    }
+  let imageUrl = supplierProductImagePublicUrl(
+    currentRow?.image_path ? String(currentRow.image_path) : null,
+    String(Date.now()),
+  );
+  if (file || removeImage) {
+    const imageResult = await writeSupplierProductImage(productId, file, removeImage && !file);
+    if (!imageResult.ok) return imageResult;
+    imageUrl = imageResult.imageUrl;
   }
 
   revalidatePath("/admin/proveedores");
   revalidatePath("/admin/mayorista");
   revalidatePath("/admin/ventas");
+  revalidatePath("/admin");
+  revalidatePath("/admin/finanzas");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
+  return {
+    ok: true,
+    imageUrl,
+    id: productId,
+  };
+}
+
+export async function uploadSupplierProductImageAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const productId = String(formData.get("id") ?? "").trim();
+  if (!productId) return { ok: false, error: "Falta el producto." };
+  const file = formData.getAll("image").find((item): item is File => item instanceof File && item.size > 0) ?? null;
+  const remove = String(formData.get("removeImage") ?? "") === "1";
+  if (!file && !remove) return { ok: false, error: "No llegó la imagen. Elige el archivo otra vez y guarda." };
+  const result = await writeSupplierProductImage(productId, file, remove && !file);
+  if (result.ok) {
+    revalidatePath("/admin/mayorista");
+    revalidatePath("/panel");
+    revalidatePath("/panel/mayorista");
+  }
+  return result;
+}
+
+export async function reorderWholesaleCatalogAction(orderedIds: string[]) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const ids = [...new Set(orderedIds.map((id) => String(id).trim()).filter(Boolean))];
+  if (ids.length === 0) return { ok: false, error: "No hay productos para ordenar." };
+
+  const listed = await supabase.from("supplier_products").select("id, notes").in("id", ids);
+  if (listed.error) return { ok: false, error: listed.error.message };
+  const notesById = new Map((listed.data ?? []).map((row) => [String(row.id), row.notes ? String(row.notes) : ""]));
+
+  let useNotes = false;
+  for (const [index, id] of ids.entries()) {
+    const { error } = await supabase.from("supplier_products").update({ sort_order: index }).eq("id", id);
+    if (error && /sort_order|schema cache|does not exist/i.test(error.message)) {
+      useNotes = true;
+      break;
+    }
+    if (error) return { ok: false, error: error.message };
+  }
+  if (useNotes) {
+    for (const [index, id] of ids.entries()) {
+      const { error } = await supabase
+        .from("supplier_products")
+        .update({ notes: withSortToken(notesById.get(id) ?? "", index) || null })
+        .eq("id", id);
+      if (error) return { ok: false, error: error.message };
+    }
+  }
+
+  revalidatePath("/admin/mayorista");
   revalidatePath("/panel");
   revalidatePath("/panel/mayorista");
   return { ok: true };
 }
 
 function wholesaleSchemaHint(message: string) {
+  if (/unit_price|bulk_qty/i.test(message)) {
+    return "Falta ejecutar el SQL 0023_wholesale_unit_bulk_prices.sql en Supabase.";
+  }
   if (/does not exist|schema cache|wholesale_/i.test(message)) {
     return "Falta ejecutar el SQL 0022_wholesale_catalog_sales.sql en Supabase.";
   }
@@ -615,7 +797,8 @@ export async function addWholesaleStockAction(formData: FormData) {
   }
   const unitCostRaw = String(formData.get("unitCost") ?? "").trim();
   const supplierId = String(formData.get("supplierId") ?? "").trim();
-  const { error } = await supabase.from("wholesale_stock_entries").insert({
+  const writer = createServiceClient() ?? supabase;
+  const { error } = await writer.from("wholesale_stock_entries").insert({
     supplier_product_id: supplierProductId,
     supplier_id: supplierId || null,
     quantity,
@@ -627,6 +810,8 @@ export async function addWholesaleStockAction(formData: FormData) {
   revalidatePath("/admin/mayorista");
   revalidatePath("/admin/ventas");
   revalidatePath("/admin/proveedores");
+  revalidatePath("/admin");
+  revalidatePath("/admin/finanzas");
   revalidatePath("/panel");
   revalidatePath("/panel/mayorista");
   return { ok: true };
@@ -689,6 +874,105 @@ export async function upsertWholesaleSaleAction(formData: FormData) {
   revalidatePath("/admin/ventas");
   revalidatePath("/admin/mayorista");
   revalidatePath("/admin/proveedores");
+  revalidatePath("/admin");
+  revalidatePath("/admin/finanzas");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
+  return { ok: true };
+}
+
+function limaDatePlusDays(days: number) {
+  const lima = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const start = Date.UTC(lima.getUTCFullYear(), lima.getUTCMonth(), lima.getUTCDate());
+  const end = new Date(start + days * 86_400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    purchasedAt: `${lima.getUTCFullYear()}-${pad(lima.getUTCMonth() + 1)}-${pad(lima.getUTCDate())}`,
+    expiresAt: `${end.getUTCFullYear()}-${pad(end.getUTCMonth() + 1)}-${pad(end.getUTCDate())}`,
+  };
+}
+
+export async function purchaseWholesaleAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  if (!session.sellerId) return { ok: false, error: "No hay vendedor asociado a esta sesión." };
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+
+  const supplierProductId = String(formData.get("supplierProductId") ?? "").trim();
+  const pack = String(formData.get("pack") ?? "") === "bulk" ? "bulk" : "unit";
+  if (!supplierProductId) return { ok: false, error: "Falta el producto." };
+
+  const productSelect =
+    "id, platform_id, cost_price, wholesale_price, unit_price, bulk_qty, offer_kind, status, notes";
+  const { data: firstProduct, error: firstError } = await supabase
+    .from("supplier_products")
+    .select(productSelect)
+    .eq("id", supplierProductId)
+    .maybeSingle();
+  let product: Record<string, unknown> | null = firstProduct as Record<string, unknown> | null;
+  let productError = firstError;
+  if (productError && /unit_price|bulk_qty/i.test(productError.message)) {
+    const retry = await supabase
+      .from("supplier_products")
+      .select("id, platform_id, cost_price, wholesale_price, offer_kind, status, notes")
+      .eq("id", supplierProductId)
+      .maybeSingle();
+    product = retry.data as Record<string, unknown> | null;
+    productError = retry.error;
+  }
+  if (productError) return { ok: false, error: wholesaleSchemaHint(productError.message) };
+  if (!product || String(product.status ?? "active") !== "active") {
+    return { ok: false, error: "Ese producto ya no está en el catálogo." };
+  }
+
+  const fromNotes = parsePricingToken(product.notes ? String(product.notes) : "");
+  const pricing = wholesalePricing({
+    wholesalePrice: Number(product.wholesale_price ?? 0),
+    unitPrice: Number(product.unit_price ?? 0) || fromNotes.unitPrice,
+    bulkQty: Number(product.bulk_qty ?? 0) >= 2 ? Number(product.bulk_qty) : fromNotes.bulkQty,
+  });
+  if (pack === "bulk" && !pricing.hasPackDeal) {
+    return { ok: false, error: "Este producto no tiene pack de varias unidades." };
+  }
+  const quantity = pack === "bulk" ? pricing.bulkQty : 1;
+  const wholesalePrice = pack === "bulk" ? pricing.packUnitPrice : pricing.unitPrice;
+  const { purchasedAt, expiresAt } = limaDatePlusDays(30);
+
+  const payload = {
+    supplier_product_id: supplierProductId,
+    seller_id: session.sellerId,
+    platform_id: product.platform_id ? String(product.platform_id) : null,
+    offer_kind: String(product.offer_kind ?? "perfil") === "cuenta_completa" ? "cuenta_completa" : "perfil",
+    quantity,
+    cost_price: Number(product.cost_price ?? 0),
+    wholesale_price: wholesalePrice,
+    purchased_at: purchasedAt,
+    expires_at: expiresAt,
+    notes:
+      pack === "bulk"
+        ? `Pack de ${quantity} unidades desde catálogo mayorista.`
+        : "1 unidad desde catálogo mayorista.",
+    status: "active" as const,
+  };
+
+  const writer = createServiceClient() ?? supabase;
+  const { error } = await writer.from("wholesale_sales").insert(payload);
+  if (error) {
+    if (/sin stock suficiente/i.test(error.message)) {
+      return { ok: false, error: `No hay stock suficiente para ${quantity} unidad${quantity === 1 ? "" : "es"}.` };
+    }
+    return { ok: false, error: wholesaleSchemaHint(error.message) };
+  }
+
+  revalidatePath("/admin/ventas");
+  revalidatePath("/admin/mayorista");
+  revalidatePath("/admin");
+  revalidatePath("/admin/finanzas");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
   return { ok: true };
 }
 
@@ -705,6 +989,10 @@ export async function cancelWholesaleSaleAction(formData: FormData) {
   if (error) return { ok: false, error: wholesaleSchemaHint(error.message) };
   revalidatePath("/admin/ventas");
   revalidatePath("/admin/mayorista");
+  revalidatePath("/admin");
+  revalidatePath("/admin/finanzas");
+  revalidatePath("/panel");
+  revalidatePath("/panel/mayorista");
   return { ok: true };
 }
 
@@ -1220,6 +1508,10 @@ export async function updateSellerSettingsAction(formData: FormData) {
     if (!stored) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
     payload.whatsapp = stored;
   }
+  const supportHours = formData.get("supportHours");
+  if (typeof supportHours === "string") {
+    payload.support_hours = supportHours.trim().slice(0, 80) || DEFAULT_SUPPORT_HOURS;
+  }
   if (typeof storeMessage === "string") payload.store_message = storeMessage.trim();
   const bannerEnabled = formData.getAll("storeBannerEnabled");
   if (bannerEnabled.length) payload.store_banner_enabled = bannerEnabled.includes("true");
@@ -1251,9 +1543,14 @@ export async function updateSellerSettingsAction(formData: FormData) {
   }
   if (Object.keys(payload).length === 0) return { ok: false, error: "Nada que guardar." };
   const { error } = await supabase.from("sellers").update(payload).eq("id", session.sellerId);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (error.message.toLowerCase().includes("support_hours")) return { ok: false, error: SUPPORT_HOURS_SQL_HINT };
+    return { ok: false, error: error.message };
+  }
   revalidatePath("/panel/configuracion");
   revalidatePath("/panel");
+  revalidatePath("/cliente");
+  revalidatePath("/cliente", "layout");
   return { ok: true };
 }
 
@@ -1518,7 +1815,7 @@ export async function changePasswordAction(formData: FormData) {
   const blocked = ensureLive();
   if (blocked) return blocked;
   const session = await getAppSession();
-  requireRole(session, ["seller"]);
+  requireRole(session, ["seller", "superadmin", "support", "customer"]);
   const supabase = await createClient();
   if (!supabase) return { ok: false, error: "Sin cliente" };
   const password = String(formData.get("password") ?? "");
@@ -1527,6 +1824,35 @@ export async function changePasswordAction(formData: FormData) {
   if (password !== confirm) return { ok: false, error: "Las claves no coinciden." };
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateCustomerNicknameAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["customer"]);
+  if (!session.userId || !session.customerId) return { ok: false, error: "Cliente no encontrado." };
+  const supabase = await createClient();
+  if (!supabase) return { ok: false, error: "Sin cliente" };
+  const name = String(formData.get("nickname") ?? "").trim();
+  if (name.length < 2) return { ok: false, error: "El apodo debe tener al menos 2 caracteres." };
+  if (name.length > 40) return { ok: false, error: "El apodo no puede superar 40 caracteres." };
+
+  const { error: profileError } = await supabase.from("profiles").update({ full_name: name }).eq("id", session.userId);
+  if (profileError) return { ok: false, error: profileError.message };
+
+  const writer = createServiceClient() ?? supabase;
+  const { error: customerError } = await writer
+    .from("customers")
+    .update({ name })
+    .eq("id", session.customerId)
+    .eq("profile_id", session.userId);
+  if (customerError) return { ok: false, error: customerError.message };
+
+  await supabase.auth.updateUser({ data: { full_name: name } });
+  revalidatePath("/cliente", "layout");
+  revalidatePath("/cliente/cuenta");
   return { ok: true };
 }
 

@@ -1,40 +1,37 @@
-import { Card } from "@/components/ui/Card";
-import { DataTable } from "@/components/ui/DataTable";
-import { EmailStatusBadge } from "@/components/ui/StatusBadge";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { connectedEmails, emailAuditLogs } from "@/data/mock";
-import { formatDate } from "@/lib/format";
-import { getSeller } from "@/lib/selectors";
+import { EmailCodesBoard } from "@/components/email/EmailCodesBoard";
+import { loadEmailCodesBundle, loadPlatforms, loadSellers } from "@/lib/data/queries";
+import { isGoogleOAuthConfigured, isMicrosoftOAuthConfigured, oauthRedirectUri } from "@/lib/email-oauth-config";
 
-export default function AdminEmailsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function AdminEmailsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ oauth?: string }>;
+}) {
+  const { oauth } = await searchParams;
+  const [bundle, platforms, sellers] = await Promise.all([
+    loadEmailCodesBundle(),
+    loadPlatforms(),
+    loadSellers(),
+  ]);
+  const sellerNameById = Object.fromEntries(sellers.map((seller) => [seller.id, seller.businessName || seller.name]));
+
   return (
-    <div>
-      <PageHeader
-        title="Correos"
-        description="Supervisión global de cuentas conectadas. No se muestra contenido de mensajes."
-      />
-      <Card>
-        <DataTable
-          rows={connectedEmails}
-          columns={[
-            { key: "seller", header: "Vendedor", render: (row) => getSeller(row.sellerId)?.name ?? "—" },
-            { key: "email", header: "Correo", render: (row) => row.email },
-            { key: "provider", header: "Proveedor", render: (row) => (row.provider === "google" ? "Google" : "Microsoft") },
-            { key: "status", header: "Estado", render: (row) => <EmailStatusBadge status={row.status} /> },
-            {
-              key: "sync",
-              header: "Última sincronización",
-              render: (row) => (row.lastSyncAt ? formatDate(row.lastSyncAt) : "—"),
-            },
-            {
-              key: "lookups",
-              header: "Consultas",
-              render: (row) =>
-                emailAuditLogs.filter((item) => item.sellerId === row.sellerId).length,
-            },
-          ]}
-        />
-      </Card>
-    </div>
+    <EmailCodesBoard
+      mode="admin"
+      sellerId={null}
+      sellers={sellers}
+      platforms={platforms}
+      emails={bundle.emails}
+      filterPolicy={bundle.globalFilter}
+      globalFilter={bundle.globalFilter}
+      lookups={bundle.lookups}
+      missingSql={bundle.missingSql}
+      sellerNameById={sellerNameById}
+      oauthConfigured={{ google: isGoogleOAuthConfigured(), microsoft: isMicrosoftOAuthConfigured() }}
+      oauthRedirects={{ google: oauthRedirectUri("google"), microsoft: oauthRedirectUri("microsoft") }}
+      oauthResult={oauth}
+    />
   );
 }

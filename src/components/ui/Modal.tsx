@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 export function Modal({
   open,
@@ -13,10 +15,12 @@ export function Modal({
   children: ReactNode;
   onClose: () => void;
 }) {
-  if (!open) return null;
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4">
       <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl border border-[#253047] bg-[#111827] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.45)] sm:max-w-lg sm:rounded-2xl sm:p-6">
         <div className="mb-4 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold text-[#F8FAFC]">{title}</h2>
@@ -26,7 +30,8 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

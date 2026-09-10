@@ -6,9 +6,13 @@ import { Button } from "@/components/ui/Button";
 export function SupplierProductImageField({
   imageUrl,
   autoSubmit = false,
+  onFile,
+  includeFileName = true,
 }: {
   imageUrl?: string | null;
   autoSubmit?: boolean;
+  onFile?: (file: File | null) => void;
+  includeFileName?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(imageUrl ?? null);
@@ -32,6 +36,7 @@ export function SupplierProductImageField({
     setLocalUrl(url);
     setPreview(url);
     setRemove(false);
+    onFile?.(file);
   }
 
   return (
@@ -43,17 +48,24 @@ export function SupplierProductImageField({
       {preview ? (
         <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg bg-[#0B111C]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt="Vista previa de la imagen del producto" className="h-full w-full object-cover" />
+          <img
+            src={preview}
+            alt="Vista previa de la imagen del producto"
+            className="h-full w-full object-cover"
+            onError={() => {
+              if (!localUrl) setPreview(null);
+            }}
+          />
         </div>
       ) : (
         <p className="text-xs text-slate-500">Aún no hay imagen.</p>
       )}
       <input
         ref={inputRef}
-        name="image"
+        {...(includeFileName ? { name: "image" } : {})}
         type="file"
         accept="image/png,image/webp,image/jpeg,.png,.webp,.jpg,.jpeg"
-        className="hidden"
+        className="sr-only"
         onChange={(event) => {
           pickFile(event.target.files?.[0]);
           if (autoSubmit) event.currentTarget.form?.requestSubmit();
@@ -79,6 +91,7 @@ export function SupplierProductImageField({
                 setLocalUrl(null);
                 setPreview(null);
                 setRemove(true);
+                onFile?.(null);
               }}
             >
               Quitar

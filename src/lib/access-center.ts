@@ -1,6 +1,7 @@
 /**
- * SIMULACIÓN del Centro de Acceso.
- * No conecta Gmail/Outlook. No guardar contraseñas de correo.
+ * Política del Centro de Acceso.
+ * La consulta real pasa por lookupAccessCodeAction y el filtro deny-by-default.
+ * No conectar Gmail/Outlook con contraseña. No devolver el correo completo.
  */
 import type { EmailLookupRequest, EmailLookupResult, Subscription } from "@/lib/types";
 

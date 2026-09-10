@@ -1,6 +1,6 @@
-import { PageHeader } from "@/components/ui/PageHeader";
 import { CustomerAccessCenter } from "@/components/access/CustomerAccessCenter";
-import { customerScope, loadPlatforms, loadServices } from "@/lib/data/queries";
+import { customerScope, loadConnectedEmails, loadPlatforms, loadServices } from "@/lib/data/queries";
+import { serviceStatusFromDates } from "@/lib/format";
 
 export default async function CustomerAccessPage() {
   const { customerId } = await customerScope();
@@ -9,22 +9,22 @@ export default async function CustomerAccessPage() {
     loadPlatforms(),
   ]);
   const mine = services
-    .filter((item) => item.status === "activo" || item.status === "proximo_a_vencer")
+    .filter((item) => {
+      const status = serviceStatusFromDates(item.endDate, item.status);
+      return status === "activo" || status === "proximo_a_vencer";
+    })
     .map((item) => ({ ...item, internalCost: 0 }));
   const sellerId = mine[0]?.sellerId ?? "";
+  const mailboxes = sellerId ? await loadConnectedEmails(sellerId) : [];
+  const enabledMailboxEmails = mailboxes.filter((item) => item.codesEnabled).map((item) => item.email);
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Centro de acceso"
-        description="Aquí verás el Gmail o usuario de cada servicio (Netflix, Max, etc.). Los códigos automáticos se conectarán después."
-      />
-      <CustomerAccessCenter
-        services={mine}
-        platforms={platforms}
-        customerId={customerId ?? ""}
-        sellerId={sellerId}
-      />
-    </div>
+    <CustomerAccessCenter
+      services={mine}
+      platforms={platforms}
+      customerId={customerId ?? ""}
+      sellerId={sellerId}
+      enabledMailboxEmails={enabledMailboxEmails}
+    />
   );
 }

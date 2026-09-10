@@ -44,7 +44,7 @@ export const HOME_SLOT_META: Record<
     fallback: "from-[#5b21b6] to-[#1e3a8a]",
   },
   correos: {
-    label: "Correos",
+    label: "Centro de códigos",
     recommended: "800×800 px · cuadrado · máx. 8 MB",
     fallback: "from-[#0e7490] to-[#155e75]",
   },

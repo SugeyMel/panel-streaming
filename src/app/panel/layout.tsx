@@ -26,6 +26,7 @@ export default async function SellerLayout({
       role="Vendedor"
       variant="seller"
       userName={session.name}
+      userEmail={session.email}
       pendingCount={pendingAlerts.length}
       pendingAlerts={pendingAlerts}
     >

@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/Button";
 import { DataTable } from "@/components/ui/DataTable";
 import { PlatformName } from "@/components/ui/PlatformLogo";

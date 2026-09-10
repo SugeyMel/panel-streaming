@@ -33,10 +33,14 @@ export default async function CustomerLayout({ children }: { children: ReactNode
       title="Inicio"
       role="Cliente"
       variant="customer"
-      userName={session.name}
+      userName={customer?.name || session.name}
+      userEmail={customer?.email || session.email}
       customerAlerts={customerAlerts}
       brandLogoUrl={seller?.logoUrl}
       brandTitle={seller?.businessName}
+      supportWhatsapp={seller?.whatsapp}
+      supportHours={seller?.supportHours}
+      supportName={seller?.businessName || seller?.name || "tu vendedor"}
     >
       {children}
     </DashboardShell>

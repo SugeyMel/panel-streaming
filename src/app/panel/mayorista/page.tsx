@@ -1,28 +1,28 @@
-import { Card } from "@/components/ui/Card";
-import { DataTable } from "@/components/ui/DataTable";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { formatCurrency } from "@/lib/format";
-import { loadSupplierProducts, loadSuppliers } from "@/lib/data/queries";
+import { SellerWholesaleCatalog } from "@/components/panel/SellerWholesaleCatalog";
+import { loadPlatforms, loadSupplierProducts } from "@/lib/data/queries";
 
-export default async function SellerWholesalePage() {
-  const [suppliers, products] = await Promise.all([loadSuppliers(), loadSupplierProducts()]);
+export default async function SellerWholesalePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ producto?: string }>;
+}) {
+  const [{ producto }, products, platforms] = await Promise.all([
+    searchParams,
+    loadSupplierProducts(),
+    loadPlatforms(),
+  ]);
+  const catalog = products.filter((row) => row.status === "active");
+
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="Mayorista"
-        description="Consulta de productos mayoristas. Sin pagos automáticos a proveedores."
-      />
-      <Card>
-        <DataTable
-          rows={products}
-          columns={[
-            { key: "name", header: "Producto", render: (row) => row.name },
-            { key: "price", header: "Precio mayorista", render: (row) => formatCurrency(row.wholesalePrice) },
-            { key: "status", header: "Estado", render: (row) => row.status },
-          ]}
-        />
-      </Card>
-      <p className="text-xs text-slate-500">{suppliers.length} proveedores visibles para vendedores autorizados.</p>
+    <div className="@container min-w-0 space-y-3 @lg:space-y-4">
+      <div>
+        <h1 className="text-xl font-semibold tracking-tight text-[#F8FAFC] @lg:text-3xl">Mayorista</h1>
+        <p className="mt-1 text-[12px] leading-snug text-[#94A3B8] @lg:max-w-2xl @lg:text-sm">
+          El precio de la tarjeta es el costo por unidad al alquilar el pack. En detalles ves también el precio de 1
+          unidad.
+        </p>
+      </div>
+      <SellerWholesaleCatalog products={catalog} platforms={platforms} initialProductId={producto} />
     </div>
   );
 }

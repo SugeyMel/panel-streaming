@@ -1,13 +1,20 @@
 import { AdminHomeDashboard } from "@/components/admin/AdminHomeDashboard";
 import { getAppSession } from "@/lib/auth/get-session";
-import { loadCustomers, loadSellers } from "@/lib/data/queries";
-import { currentLimaMonthKey, firstName, monthOptions, type AdminHomePayload } from "@/lib/admin-home";
+import { loadCustomers, loadSellers, loadWholesaleSales } from "@/lib/data/queries";
+import {
+  currentLimaMonthKey,
+  firstName,
+  monthOptions,
+  wholesaleIncomeFromSales,
+  type AdminHomePayload,
+} from "@/lib/admin-home";
 
 export default async function AdminDashboardPage() {
-  const [session, sellers, customers] = await Promise.all([
+  const [session, sellers, customers, wholesaleSales] = await Promise.all([
     getAppSession(),
     loadSellers(),
     loadCustomers(),
+    loadWholesaleSales(),
   ]);
 
   const data: AdminHomePayload = {
@@ -25,6 +32,7 @@ export default async function AdminDashboardPage() {
       status: customer.status,
       registeredAt: customer.registeredAt,
     })),
+    wholesaleSales: wholesaleIncomeFromSales(wholesaleSales, sellers),
   };
 
   return <AdminHomeDashboard data={data} />;

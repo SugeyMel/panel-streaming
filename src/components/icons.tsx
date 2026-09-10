@@ -135,6 +135,15 @@ export function SettingsIcon(props: IconProps) {
   );
 }
 
+export function GearIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 13a8 8 0 0 0 0-2l2.1-1.6-2-3.4-2.5 1a7.8 7.8 0 0 0-1.7-1L12.8 3h-1.6l-.5 2.9a7.8 7.8 0 0 0-1.7 1l-2.5-1-2 3.4L6.6 11a8 8 0 0 0 0 2l-2.1 1.6 2 3.4 2.5-1a7.8 7.8 0 0 0 1.7 1l.5 2.9h1.6l.5-2.9a7.8 7.8 0 0 0 1.7-1l2.5 1 2-3.4z" />
+    </Icon>
+  );
+}
+
 export function DashboardIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -185,6 +194,17 @@ export function EyeIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </Icon>
+  );
+}
+
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M3 5l18 14" />
+      <path d="M2.5 12s3.5-7 9.5-7c1.7 0 3.2.5 4.5 1.2" />
+      <path d="M21.5 12s-3.5 7-9.5 7c-1.7 0-3.2-.5-4.5-1.2" />
       <circle cx="12" cy="12" r="2.5" />
     </Icon>
   );
@@ -256,12 +276,34 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+export function SendIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M22 2 11 13" />
+      <path d="M22 2 15 22l-4-9-9-4 20-7z" />
+    </Icon>
+  );
+}
+
 export function MoreIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <circle cx="12" cy="6" r="1.2" fill="currentColor" />
       <circle cx="12" cy="12" r="1.2" fill="currentColor" />
       <circle cx="12" cy="18" r="1.2" fill="currentColor" />
+    </Icon>
+  );
+}
+
+export function GripIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="9" cy="6" r="1.2" fill="currentColor" />
+      <circle cx="15" cy="6" r="1.2" fill="currentColor" />
+      <circle cx="9" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="15" cy="12" r="1.2" fill="currentColor" />
+      <circle cx="9" cy="18" r="1.2" fill="currentColor" />
+      <circle cx="15" cy="18" r="1.2" fill="currentColor" />
     </Icon>
   );
 }
@@ -289,6 +331,16 @@ export function UploadIcon(props: IconProps) {
     <Icon {...props}>
       <path d="M12 16V5" />
       <path d="M8 9l4-4 4 4" />
+      <path d="M5 19h14" />
+    </Icon>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 5v11" />
+      <path d="M8 12l4 4 4-4" />
       <path d="M5 19h14" />
     </Icon>
   );
@@ -397,6 +449,25 @@ export function ChatIcon(props: IconProps) {
   );
 }
 
+export function ImageIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.4" fill="currentColor" />
+      <path d="M4 16.5 9 12l3.5 3.5 2.5-2.5 5 5" />
+    </Icon>
+  );
+}
+
+export function UserIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="8" r="3.2" />
+      <path d="M5 19c1.5-3.2 3.8-4.6 7-4.6s5.5 1.4 7 4.6" />
+    </Icon>
+  );
+}
+
 export function CalendarIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -465,6 +536,22 @@ export function ShieldIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M12 3 5 6v6c0 4.2 2.8 7.4 7 8.5 4.2-1.1 7-4.3 7-8.5V6z" />
+    </Icon>
+  );
+}
+
+export function BoltIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M13 3 5 14h6l-1 7 9-12h-6z" />
+    </Icon>
+  );
+}
+
+export function ChartBarsIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M4 19V11M10 19V5M16 19v-7M22 19H2" />
     </Icon>
   );
 }
@@ -539,6 +626,48 @@ export function StarIcon(props: IconProps) {
   return (
     <Icon {...props}>
       <path d="M12 4 14.5 9.5 20.5 10.3 16.1 14.4 17.3 20.3 12 17.4 6.7 20.3 7.9 14.4 3.5 10.3 9.5 9.5Z" />
+    </Icon>
+  );
+}
+
+export function CrownIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path
+        fill="currentColor"
+        stroke="none"
+        d="M4.2 8.4 8 12.1 12 4.8l4 7.3 3.8-3.7L18.2 18H5.8L4.2 8.4Z"
+      />
+      <path d="M6 19.5h12" />
+    </Icon>
+  );
+}
+
+export function MonitorIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="5" width="18" height="12" rx="2" />
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+    </Icon>
+  );
+}
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3c2.5 2.8 3.8 6 3.8 9s-1.3 6.2-3.8 9c-2.5-2.8-3.8-6-3.8-9s1.3-6.2 3.8-9z" />
+    </Icon>
+  );
+}
+
+export function CheckCircleIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.2 2.2 4.8-5.2" />
     </Icon>
   );
 }

@@ -6,6 +6,7 @@ import { upsertProductAction } from "@/app/actions/business";
 import { SellerStore } from "@/components/store/SellerStore";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { PlatformLogo } from "@/components/ui/PlatformLogo";
 import { platformDisplayName } from "@/lib/platform-logos";
 import { PRODUCT_TERMS, type ProductOffer } from "@/lib/selectors";
 import type { Platform, Product, Seller, StreamingAccount } from "@/lib/types";
@@ -85,16 +86,39 @@ export function ProductsManager({
             </>
           ) : null}
           <label className="block text-xs text-slate-400">Plataforma</label>
-          <select
-            name="platformId"
-            value={formPlatformId}
-            onChange={(event) => setFormPlatformId(event.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-          >
-            {listedPlatforms.map((item) => (
-              <option key={item.id} value={item.id}>{platformDisplayName(item)}</option>
-            ))}
-          </select>
+          <p className="text-[11px] leading-snug text-[#64748B]">
+            La imagen ya está en Mayorista → Plataformas. Elige el servicio; no tienes que subir foto.
+          </p>
+          <input type="hidden" name="platformId" value={formPlatformId} />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {listedPlatforms.map((item) => {
+              const selected = item.id === formPlatformId;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setFormPlatformId(item.id)}
+                  className={`flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 text-left text-sm ${
+                    selected
+                      ? "border-[#7C3AED] bg-[#7C3AED]/15 text-white"
+                      : "border-white/10 bg-white/5 text-[#E2E8F0]"
+                  }`}
+                >
+                  <PlatformLogo platform={item} size={28} />
+                  <span className="truncate">{platformDisplayName(item)}</span>
+                </button>
+              );
+            })}
+          </div>
+          {formPlatform ? (
+            <div className="flex items-center gap-3 rounded-xl border border-[#253047] bg-[#0B111C] px-3 py-2">
+              <PlatformLogo platform={formPlatform} size={40} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{platformDisplayName(formPlatform)}</p>
+                <p className="truncate text-[11px] text-[#94A3B8]">{formPlatform.tagline || "Este logo sale en tu tienda y lo ven tus clientes."}</p>
+              </div>
+            </div>
+          ) : null}
           <input type="hidden" name="name" value={formName} />
           <label className="block text-xs text-slate-400">Descripción</label>
           <input name="description" defaultValue={editing?.description} placeholder="Ej. 1 cuenta completa" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />

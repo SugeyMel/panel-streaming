@@ -1,8 +1,22 @@
-import { ClientesTable } from "@/components/customers/ClientesTable";
-import { loadMessageTemplates, panelScope } from "@/lib/data/queries";
+import { CustomersManager } from "@/components/customers/CustomersManager";
+import { loadCustomerRows, loadCustomers, panelScope } from "@/lib/data/queries";
+import type { CustomerRow } from "@/lib/selectors";
 
 export default async function SellerCustomersPage() {
   const { sellerId } = await panelScope();
-  const plantillas = await loadMessageTemplates(sellerId);
-  return <ClientesTable plantillas={plantillas} />;
+  let rows: CustomerRow[] = [];
+  try {
+    rows = await loadCustomerRows(sellerId);
+  } catch {
+    const customers = await loadCustomers(sellerId).catch(() => []);
+    rows = customers.map((customer) => ({
+      ...customer,
+      activeServices: 0,
+      expiredServices: 0,
+      nextExpiry: null,
+      totalPurchases: 0,
+      lastPurchase: null,
+    }));
+  }
+  return <CustomersManager rows={rows} detailBase="/panel/clientes" />;
 }

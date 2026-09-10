@@ -123,6 +123,7 @@ export function SupportStatusBadge({ status }: { status: SupportStatus }) {
 
 export function EmailStatusBadge({ status }: { status: EmailConnectionStatus }) {
   const map: Record<EmailConnectionStatus, Tone> = {
+    registrado: "info",
     conectado: "success",
     requiere_reconexion: "warning",
     desconectado: "neutral",

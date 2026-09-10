@@ -1,5 +1,7 @@
 export type UserRole = "admin" | "superadmin" | "seller" | "customer" | "support";
 
+export const DEFAULT_SUPPORT_HOURS = "Lun a Dom · 8:00 am – 11:00 pm";
+
 export type SellerStatus = "activo" | "suspendido" | "pendiente" | "desactivado";
 
 export type CustomerStatus = "activo" | "inactivo" | "suspendido";
@@ -42,6 +44,7 @@ export type SupportStatus = "pendiente" | "en_proceso" | "respondido" | "cerrado
 export type EmailProvider = "google" | "microsoft";
 
 export type EmailConnectionStatus =
+  | "registrado"
   | "conectado"
   | "requiere_reconexion"
   | "desconectado"
@@ -81,6 +84,7 @@ export type Seller = {
   slug: string;
   email: string;
   whatsapp: string;
+  supportHours: string;
   status: SellerStatus;
   registeredAt: string;
   yapeHolder: string;
@@ -134,6 +138,7 @@ export type Platform = {
   accentFrom: string;
   accentTo: string;
   logoUrl?: string | null;
+  customerLogoUrl?: string | null;
 };
 
 export type Product = {
@@ -310,6 +315,18 @@ export type ConnectedEmailAccount = {
   status: EmailConnectionStatus;
   lastSyncAt: string | null;
   linkedPlatformIds: string[];
+  codesEnabled: boolean;
+  oauthEmail?: string | null;
+};
+
+export type EmailCodeFilterPolicy = {
+  id: string;
+  sellerId: string | null;
+  allowLoginCode: boolean;
+  allowVerificationCode: boolean;
+  allowNetflixTravel: boolean;
+  allowNetflixHousehold: boolean;
+  extraBlockKeywords: string[];
 };
 
 export type PlatformEmailAssignment = {
@@ -396,12 +413,15 @@ export type WholesaleCatalogProduct = {
   name: string;
   description: string;
   wholesalePrice: number;
+  unitPrice: number;
+  bulkQty: number;
   costPrice: number;
   offerKind: WholesaleOfferKind;
   status: "active" | "inactive" | string;
   notes: string | null;
   imagePath: string | null;
   imageUrl: string | null;
+  sortOrder: number;
   acquired: number;
   sold: number;
   available: number;

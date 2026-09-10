@@ -86,6 +86,7 @@ function Tab({
   return (
     <Link
       href={item.href}
+      prefetch={false}
       className={`flex min-h-14 flex-col items-center justify-center gap-0.5 px-0.5 text-center text-[10px] leading-tight font-medium ${
         active ? "text-[#60A5FA]" : "text-[#94A3B8]"
       }`}

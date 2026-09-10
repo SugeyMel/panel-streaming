@@ -1,15 +1,17 @@
-import { Hero } from "@/components/store/Hero";
-import { HowItWorks } from "@/components/store/HowItWorks";
-import { PlatformCatalog } from "@/components/store/PlatformCatalog";
-import { loadPlatforms } from "@/lib/data/queries";
+import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { AccessScreen } from "@/components/auth/AccessScreen";
+import { getAppSession, portalPath } from "@/lib/auth/get-session";
 
 export default async function HomePage() {
-  const platforms = await loadPlatforms();
+  const session = await getAppSession();
+  if (session.mode === "live" && session.userId) {
+    redirect(portalPath(session.role));
+  }
+
   return (
-    <main>
-      <Hero />
-      <PlatformCatalog platforms={platforms} />
-      <HowItWorks />
-    </main>
+    <Suspense>
+      <AccessScreen />
+    </Suspense>
   );
 }

@@ -7,10 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { AppBrand } from "@/components/brand/Logo";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { AlertsBell, SellerBell, type HeaderAlert, type SellerBellAlert } from "@/components/layout/SellerBell";
+import { CustomerUserMenu } from "@/components/layout/CustomerUserMenu";
 import { SellerUserMenu } from "@/components/layout/SellerUserMenu";
 import { adminNav, customerNav, sellerNav, sellerPrimaryNav } from "@/components/layout/nav";
-import { BellIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
+import { BellIcon, ChevronDownIcon, SearchIcon, WhatsAppIcon } from "@/components/icons";
 import { signOutAction } from "@/app/actions/business";
+import { DEFAULT_SUPPORT_HOURS } from "@/lib/types";
+import { waLink } from "@/lib/whatsapp";
 
 const homes = {
   admin: "/admin",
@@ -31,7 +34,7 @@ const sellerMoreItems: {
   disabled?: boolean;
 }[] = [
   { label: "Inventario", href: "/panel/inventario" },
-  { label: "Correos", href: "/panel/correos" },
+  { label: "Centro de códigos", href: "/panel/correos" },
   { label: "Medios de pago", href: "/panel/configuracion" },
   { label: "Finanzas", href: "/panel/finanzas" },
   { label: "Reportes", disabled: true, hint: "Sin sección propia aún" },
@@ -46,21 +49,29 @@ export function DashboardShell({
   role,
   variant,
   userName = "",
+  userEmail = "",
   pendingAlerts = [],
   customerAlerts = [],
   brandLogoUrl,
   brandTitle,
+  supportWhatsapp,
+  supportHours,
+  supportName,
   children,
 }: {
   title: string;
   role: string;
   variant: "seller" | "admin" | "customer";
   userName?: string;
+  userEmail?: string;
   pendingCount?: number;
   pendingAlerts?: SellerBellAlert[];
   customerAlerts?: HeaderAlert[];
   brandLogoUrl?: string | null;
   brandTitle?: string;
+  supportWhatsapp?: string | null;
+  supportHours?: string | null;
+  supportName?: string;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -70,12 +81,19 @@ export function DashboardShell({
   const items =
     variant === "admin" ? adminNav : variant === "customer" ? customerNav : sellerNav;
   const home = homes[variant];
-  const initial = (userName.trim()[0] ?? role[0] ?? "U").toUpperCase();
   const customerSubflow =
     variant === "customer" &&
     (pathname.includes("/cliente/servicios/") || pathname.includes("/cliente/renovar"));
   const sellerApp = variant === "seller";
   const adminApp = variant === "admin";
+  const customerApp = variant === "customer";
+  const customerHome = customerApp && pathname === "/cliente";
+  const customerServices = customerApp && pathname === "/cliente/servicios";
+  const customerAccess = customerApp && pathname === "/cliente/acceso";
+  const supportWa =
+    customerApp && supportWhatsapp
+      ? waLink(supportWhatsapp, `Hola ${supportName || "vendedor"}, soy ${userName || "cliente"}. Necesito ayuda.`)
+      : "";
   const sellerMoreActive =
     sellerApp &&
     !sellerPrimaryNav.some((item) =>
@@ -92,12 +110,13 @@ export function DashboardShell({
   }, []);
 
   return (
-    <div className={`min-h-screen text-[#F8FAFC] ${variant === "admin" ? "bg-[#0B0F1A]" : "bg-[#070B12]"}`}>
+    <div className={`min-h-screen text-[#F8FAFC] ${adminApp ? "bg-[#0B0F1A]" : customerApp ? "bg-[#0B0F19]" : "bg-[#070B12]"}`}>
       <div className={sellerApp ? "" : "lg:grid lg:grid-cols-[272px_1fr]"}>
         {sellerApp ? null : (
         <aside className="hidden min-h-screen flex-col border-r border-[#253047] bg-[#0B0F1A] lg:flex">
-          <div className="border-b border-[#253047] p-5">
+          <div className="border-b border-[#253047] p-4">
             <AppBrand href={home} role={role} size="sidebar" logoSrc={brandLogoUrl} title={brandTitle} />
+            {customerApp ? <p className="mt-1 text-[11px] text-[#94A3B8]">Tu contenido, siempre contigo</p> : null}
           </div>
           <nav className="flex-1 space-y-1 p-3">
             {items.map((item) => {
@@ -110,11 +129,14 @@ export function DashboardShell({
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
                     active
                       ? adminApp
                         ? "bg-[#7C3AED] text-white"
-                        : "bg-gradient-to-r from-[#8B5CF6]/30 to-[#06B6D4]/15 text-[#F8FAFC] shadow-[inset_3px_0_0_#8B5CF6]"
+                        : customerApp
+                          ? "bg-gradient-to-r from-[#7C3AED] to-[#2563EB] text-white shadow-[0_8px_20px_rgba(124,58,237,0.28)]"
+                          : "bg-gradient-to-r from-[#8B5CF6]/30 to-[#06B6D4]/15 text-[#F8FAFC] shadow-[inset_3px_0_0_#8B5CF6]"
                       : "text-[#94A3B8] hover:bg-[#172033] hover:text-[#F8FAFC]"
                   }`}
                 >
@@ -135,6 +157,23 @@ export function DashboardShell({
               <p className="mt-1 text-xs text-[#94A3B8]">Tu negocio, en todas partes.</p>
             </div>
           ) : null}
+          {customerApp && supportWa ? (
+            <div className="mx-3 mb-3 rounded-2xl border border-[#22C55E]/25 bg-[#111827] p-3">
+              <p className="text-xs font-semibold text-white">¿Necesitas ayuda?</p>
+              <a
+                href={supportWa}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-full bg-[#22C55E] text-xs font-semibold text-white"
+              >
+                <WhatsAppIcon className="h-3.5 w-3.5" />
+                WhatsApp
+              </a>
+              <p className="mt-1.5 text-center text-[10px] text-[#64748B]">
+                {supportHours?.trim() || DEFAULT_SUPPORT_HOURS}
+              </p>
+            </div>
+          ) : null}
           <form action={signOutAction} className="p-4 pt-0">
             <button
               type="submit"
@@ -149,11 +188,11 @@ export function DashboardShell({
         <div className="min-h-screen">
           <header
             className={`sticky top-0 z-20 border-b border-[#253047] backdrop-blur-xl ${
-              variant === "admin" ? "bg-[#0B0F1A]/92" : "bg-[#070B12]/92"
+              adminApp ? "bg-[#0B0F1A]/92" : customerApp ? "bg-[#0B0F19]/92" : "bg-[#070B12]/92"
             } ${customerSubflow ? "hidden lg:block" : ""}`}
           >
             <div className={adminApp ? "hidden" : "hidden h-1 bg-gradient-to-r from-[#8B5CF6] via-[#3B82F6] to-[#06B6D4] lg:block"} />
-            <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 lg:px-8 lg:py-3">
+            <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 lg:px-5 lg:py-2.5">
               <div className={`flex min-w-0 items-center gap-6 ${sellerApp ? "" : "lg:hidden"}`}>
                 <span className="inline-flex min-w-0 items-center gap-2">
                   <AppBrand compact href={home} logoSrc={brandLogoUrl} title={brandTitle} />
@@ -195,6 +234,17 @@ export function DashboardShell({
                     />
                   </label>
                 </div>
+              ) : customerApp ? (
+                <form action="/cliente/comprar" className="relative hidden min-w-0 flex-1 lg:block">
+                  <span className="sr-only">Buscar plataformas, pedidos o ayuda</span>
+                  <SearchIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[#64748B]" />
+                  <input
+                    name="q"
+                    type="search"
+                    placeholder="Buscar plataformas, pedidos o ayuda..."
+                    className="h-10 w-full rounded-xl border border-[#253047] bg-[#111827] pr-3 pl-10 text-sm text-[#F1F5F9] outline-none placeholder:text-[#64748B]"
+                  />
+                </form>
               ) : (
                 <div className="hidden lg:block">
                   <h1 className="text-lg font-semibold">{title}</h1>
@@ -292,37 +342,17 @@ export function DashboardShell({
                   </>
                 )}
                 {variant === "seller" ? (
-                  <SellerUserMenu name={userName} />
+                  <SellerUserMenu name={userName} email={userEmail} roleLabel="Vendedor" />
                 ) : adminApp ? (
                   <div className="flex items-center gap-3">
-                    <span
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#6366F1] text-sm font-semibold text-white"
-                      title={userName || role}
-                    >
-                      {initial}
-                    </span>
+                    <SellerUserMenu name={userName} email={userEmail} roleLabel="Administrador" />
                     <span className="hidden leading-tight lg:block">
                       <span className="block text-sm font-semibold text-white">{userName || "Admin"}</span>
                       <span className="block text-[11px] text-[#94A3B8]">Administrador</span>
                     </span>
                   </div>
                 ) : (
-                  <>
-                    <span
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#8B5CF6] to-[#06B6D4] text-sm font-semibold text-white"
-                      title={userName || role}
-                    >
-                      {initial}
-                    </span>
-                    <form action={signOutAction} className="hidden lg:block">
-                      <button
-                        type="submit"
-                        className="rounded-xl border border-[#253047] bg-[#0B111C] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#172033]"
-                      >
-                        Cerrar sesión
-                      </button>
-                    </form>
-                  </>
+                  <CustomerUserMenu name={userName} email={userEmail} />
                 )}
               </div>
             </div>
@@ -331,7 +361,13 @@ export function DashboardShell({
             className={
               adminApp
                 ? "px-3 py-3 pb-24 sm:px-4 lg:px-6 lg:py-3 lg:pb-4"
-                : "px-4 py-5 pb-28 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
+                : sellerApp && pathname === "/panel/pedidos"
+                  ? "px-3 py-3 pb-24 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
+                  : customerApp
+                    ? customerHome || customerServices || customerAccess
+                      ? "px-3 py-3 pb-24 lg:px-4 lg:py-3 lg:pb-5"
+                      : "px-3 py-3 pb-24 sm:px-4 lg:px-5 lg:py-4 lg:pb-6"
+                    : "px-4 py-5 pb-28 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
             }
           >
             {children}

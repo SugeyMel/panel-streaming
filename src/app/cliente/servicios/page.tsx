@@ -1,6 +1,5 @@
-import { PageHeader } from "@/components/ui/PageHeader";
-import { ServiceCard } from "@/components/services/ServiceCard";
-import { customerScope, loadPlatforms, loadServices } from "@/lib/data/queries";
+import { CustomerServicesBoard } from "@/components/cliente/CustomerServicesBoard";
+import { customerScope, loadPlatforms, loadProducts, loadServices } from "@/lib/data/queries";
 
 export default async function CustomerServicesPage() {
   const { customerId } = await customerScope();
@@ -8,24 +7,16 @@ export default async function CustomerServicesPage() {
     loadServices({ customerId }),
     loadPlatforms(),
   ]);
+  const sellerIds = [...new Set(services.map((item) => item.sellerId))];
+  const products = (
+    await Promise.all(sellerIds.map((sellerId) => loadProducts(sellerId, true)))
+  ).flat();
+
   return (
-    <div>
-      <PageHeader title="Mis servicios" description="Tus suscripciones, fechas de vencimiento y estado." />
-      <div className="grid gap-3 md:grid-cols-2">
-        {services.map((subscription) => {
-          const platform = platforms.find((item) => item.id === subscription.platformId);
-          if (!platform) return null;
-          return (
-            <ServiceCard
-              key={subscription.id}
-              subscription={{ ...subscription, internalCost: 0 }}
-              platform={platform}
-              showRenewal
-              href={`/cliente/servicios/${subscription.id}`}
-            />
-          );
-        })}
-      </div>
-    </div>
+    <CustomerServicesBoard
+      services={services.map((item) => ({ ...item, internalCost: 0 }))}
+      platforms={platforms}
+      products={products}
+    />
   );
 }

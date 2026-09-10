@@ -7,8 +7,8 @@ export default async function SellerOrdersPage() {
   return (
     <OrdersBrowser
       orders={list}
-      groupedTabs
       actionHref="/panel/pedidos/{id}"
+      createHref="/panel/productos"
     />
   );
 }

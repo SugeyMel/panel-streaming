@@ -27,7 +27,12 @@ export type WholesalePreview = {
   id: string;
   name: string;
   wholesalePrice: number;
+  fromPrice: number;
+  hasPackDeal: boolean;
+  bulkQty: number;
   imageUrl: string | null;
+  available: number;
+  sold: number;
   platform: Platform | null;
 };
 
@@ -77,8 +82,8 @@ const accessCards: AccessCard[] = [
   {
     slot: "correos",
     href: "/panel/correos",
-    title: "Correos Gmail",
-    description: "Correos para códigos de acceso",
+    title: "Centro de códigos",
+    description: "Conecta Gmail u Outlook para códigos de acceso",
     icon: MailIcon,
     tone: "text-[#22D3EE]",
   },
@@ -481,17 +486,21 @@ function WholesaleHomeStrip({ items }: { items: WholesalePreview[] }) {
                   <div className="grid grid-cols-[44px_minmax(0,1fr)] items-start gap-2">
                     <WholesaleProductImage imageUrl={item.imageUrl} platform={item.platform} name={item.name} />
                     <div className="min-w-0">
-                      <p className="line-clamp-2 text-[12px] leading-tight font-bold text-[#F8FAFC]">{item.name}</p>
+                      <p className="line-clamp-1 text-[12px] leading-tight font-bold text-[#F8FAFC]">{item.name}</p>
                       <p className="mt-1 text-[14px] leading-none font-bold text-[#F8FAFC]">
-                        {formatStorePrice(item.wholesalePrice)}
+                        {item.hasPackDeal ? "Desde " : ""}
+                        {formatStorePrice(item.fromPrice)}
+                      </p>
+                      <p className="mt-1 truncate text-[10px] leading-none text-[#94A3B8]">
+                        {item.available > 0 ? `${item.available} disp. · ${item.sold} vend.` : "Sin stock"}
                       </p>
                     </div>
                   </div>
                   <Link
-                    href="/panel/mayorista"
+                    href={`/panel/mayorista?producto=${item.id}`}
                     className="mt-2 inline-flex h-7 w-full items-center justify-center rounded-lg border border-[#253047] bg-[#1B2436] text-[11px] font-semibold text-[#F8FAFC]"
                   >
-                    Comprar
+                    {item.available > 0 ? "Ver detalles" : "Sin stock"}
                   </Link>
                 </div>
               ))}
