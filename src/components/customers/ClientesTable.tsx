@@ -16,6 +16,7 @@ import { AccountsPageHeader } from "@/components/accounts/AccountsPageHeader";
 import { AccountsPagination } from "@/components/accounts/AccountsPagination";
 import { CopyField } from "@/components/accounts/CopyField";
 import { ServiceMark } from "@/components/accounts/ServiceMark";
+import { ClientesExcelActions } from "@/components/customers/ClientesExcelActions";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { HealthStatusBadge } from "@/components/ui/StatusBadge";
@@ -347,6 +348,7 @@ export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhat
           subtitle="Gestiona tus clientes, servicios y perfiles"
           onFiltros={() => setPanel("filtros")}
           onAgregar={() => setPanel("cuenta")}
+          extraActions={<ClientesExcelActions />}
         />
         <AccountsFilterBar {...filterProps} />
       </div>
