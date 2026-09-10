@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarIcon,
   ChevronDownIcon,
@@ -116,6 +116,17 @@ function buildMockCuentas(): Cuenta[] {
 }
 
 const MOCK_INICIAL = buildMockCuentas();
+const SHEET_WIDTH = 1280;
+const MIN_ZOOM = 0.18;
+const MAX_ZOOM = 1.8;
+
+function clampZoom(value: number) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(value.toFixed(3))));
+}
+
+function isDesktopZoom() {
+  return typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches;
+}
 
 export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhatsapp }) {
   const [cuentas, setCuentas] = useState<Cuenta[]>(MOCK_INICIAL);
@@ -135,6 +146,13 @@ export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhat
   const [detail, setDetail] = useState<string | null>(null);
   const [panel, setPanel] = useState<null | "filtros" | "cuenta">(null);
   const [aviso, setAviso] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(0.3);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const userAdjustedZoom = useRef(false);
+  zoomRef.current = zoom;
 
   const servicios = useMemo(
     () => [...new Set(cuentas.map((item) => item.servicio))].sort((a, b) => a.localeCompare(b, "es")),
@@ -206,6 +224,72 @@ export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhat
     if (combo === "all") return;
     setOpenIds(new Set(visible.map((cuenta) => cuenta.id)));
   }, [combo, visible]);
+
+  function fitZoomNow() {
+    const viewport = sheetRef.current;
+    if (!viewport || isDesktopZoom()) return;
+    const measured = contentRef.current?.offsetWidth ?? 0;
+    const natural = Math.max(SHEET_WIDTH, measured);
+    const next = clampZoom((viewport.clientWidth - 4) / natural);
+    viewport.scrollLeft = 0;
+    setZoom(next);
+  }
+
+  function changeZoom(next: number) {
+    userAdjustedZoom.current = true;
+    setZoom(clampZoom(next));
+  }
+
+  useEffect(() => {
+    const node = sheetRef.current;
+    if (!node) return;
+
+    const distance = (event: TouchEvent) => {
+      const [a, b] = [event.touches[0], event.touches[1]];
+      return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      changeZoom(zoomRef.current + (event.deltaY > 0 ? -0.08 : 0.08));
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 2) {
+        pinchRef.current = { dist: distance(event), zoom: zoomRef.current };
+      }
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      if (event.touches.length !== 2 || !pinchRef.current) return;
+      event.preventDefault();
+      const ratio = distance(event) / pinchRef.current.dist;
+      changeZoom(pinchRef.current.zoom * ratio);
+    };
+    const onTouchEnd = () => {
+      pinchRef.current = null;
+    };
+
+    const onResize = () => {
+      if (!userAdjustedZoom.current) fitZoomNow();
+    };
+    const observer = new ResizeObserver(onResize);
+    observer.observe(node);
+    onResize();
+
+    node.addEventListener("wheel", onWheel, { passive: false });
+    node.addEventListener("touchstart", onTouchStart, { passive: true });
+    node.addEventListener("touchmove", onTouchMove, { passive: false });
+    node.addEventListener("touchend", onTouchEnd);
+    node.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      observer.disconnect();
+      node.removeEventListener("wheel", onWheel);
+      node.removeEventListener("touchstart", onTouchStart);
+      node.removeEventListener("touchmove", onTouchMove);
+      node.removeEventListener("touchend", onTouchEnd);
+      node.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, []);
 
   const pageSize = Number(filasPorPagina);
   const pageCount = Math.max(1, Math.ceil(visible.length / pageSize));
@@ -352,11 +436,55 @@ export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhat
         />
         <AccountsFilterBar {...filterProps} />
       </div>
-      <p className="mt-2 text-right text-xs text-[#94A3B8]">Total: {visible.length} cuentas</p>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p className="text-xs text-[#94A3B8]">Total: {visible.length} cuentas</p>
+        <div className="flex items-center gap-1 lg:hidden">
+          <button
+            type="button"
+            className="rounded-md border border-[#334155] px-2 py-1 text-[11px] font-semibold text-[#F8FAFC]"
+            onClick={() => {
+              userAdjustedZoom.current = false;
+              fitZoomNow();
+            }}
+          >
+            Ver todo
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[#334155] px-2 py-1 text-sm text-[#F8FAFC]"
+            aria-label="Alejar para ver todas las columnas"
+            onClick={() => changeZoom(zoom - 0.08)}
+          >
+            −
+          </button>
+          <span className="min-w-12 text-center text-[11px] text-[#94A3B8]">{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            className="rounded-md border border-[#334155] px-2 py-1 text-sm text-[#F8FAFC]"
+            aria-label="Acercar para leer"
+            onClick={() => changeZoom(zoom + 0.08)}
+          >
+            +
+          </button>
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] text-[#94A3B8] lg:hidden">
+        En el celular el tablero se ve de lejos, con todas las columnas. Pellizca para acercar o alejar.
+      </p>
       {aviso ? <p className="mt-2 text-sm font-medium text-[#16A34A]">{aviso}</p> : null}
 
-      <div className="mt-4 overflow-x-auto">
-        <div className="min-w-[1100px] space-y-3">
+      <div
+        ref={sheetRef}
+        className="mt-4 overflow-auto overscroll-contain"
+      >
+        <div
+          className="clientes-sheet-zoom origin-top-left max-lg:w-max"
+          style={{ ["--sheet-zoom" as string]: String(zoom) }}
+        >
+        <div
+          ref={contentRef}
+          className="min-w-[1280px] space-y-3"
+        >
           <div className={`${headerGrid} px-0 text-[10px] font-medium tracking-[0.14em] text-[#94A3B8] uppercase`}>
             <span className="px-3">#</span>
             <span className="px-2">Servicio</span>
@@ -515,6 +643,7 @@ export function ClientesTable({ plantillas = {} }: { plantillas?: PlantillasWhat
               );
             })
           )}
+        </div>
         </div>
       </div>
 

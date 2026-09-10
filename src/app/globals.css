@@ -138,7 +138,14 @@ select option {
 
 @media (max-width: 1023px) {
   .clientes-sheet-zoom {
-    zoom: var(--sheet-zoom, 0.55);
+    zoom: var(--sheet-zoom, 0.3);
+  }
+
+  @supports not (zoom: 1) {
+    .clientes-sheet-zoom {
+      transform: scale(var(--sheet-zoom, 0.3));
+      transform-origin: top left;
+    }
   }
 }
 
