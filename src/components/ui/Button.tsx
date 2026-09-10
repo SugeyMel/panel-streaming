@@ -1,5 +1,9 @@
+"use client";
+
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
+import { useFormStatus } from "react-dom";
+import { tapFeedback } from "@/lib/tap-feedback";
 
 const variants = {
   primary:
@@ -18,28 +22,80 @@ const variants = {
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: keyof typeof variants;
   href?: string;
+  busy?: boolean;
   children: ReactNode;
 };
+
+function buttonClass(variant: keyof typeof variants, className: string, busy = false) {
+  return `btn-press inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${variants[variant]} ${busy ? "is-busy" : ""} ${className}`;
+}
 
 export function Button({
   variant = "primary",
   href,
   className = "",
   children,
+  busy = false,
+  disabled,
+  type,
+  onPointerDown,
   ...props
 }: ButtonProps) {
-  const classes = `inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition ${variants[variant]} ${className}`;
-
   if (href) {
     return (
-      <Link href={href} className={classes}>
+      <Link
+        href={href}
+        className={buttonClass(variant, className)}
+        onPointerDown={() => tapFeedback(variant !== "ghost")}
+      >
         {children}
       </Link>
     );
   }
 
   return (
-    <button className={classes} {...props}>
+    <StatusButton
+      variant={variant}
+      className={className}
+      busy={busy}
+      disabled={disabled}
+      type={type}
+      onPointerDown={onPointerDown}
+      {...props}
+    >
+      {children}
+    </StatusButton>
+  );
+}
+
+function StatusButton({
+  variant = "primary",
+  className = "",
+  children,
+  busy = false,
+  disabled,
+  type,
+  onPointerDown,
+  ...props
+}: ButtonProps) {
+  const { pending } = useFormStatus();
+  const isActionButton = type !== "button" && type !== "reset";
+  const loading = Boolean(busy) || (isActionButton && pending);
+  const haptic = variant !== "ghost";
+
+  return (
+    <button
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading}
+      className={buttonClass(variant, className, loading)}
+      onPointerDown={(event) => {
+        if (!disabled && !loading) tapFeedback(haptic);
+        onPointerDown?.(event);
+      }}
+      {...props}
+    >
+      {loading ? <span className="btn-spinner" aria-hidden="true" /> : null}
       {children}
     </button>
   );

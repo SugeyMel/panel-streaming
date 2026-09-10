@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { signInAction } from "@/app/actions/business";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { tapFeedback } from "@/lib/tap-feedback";
 
 export function LoginForm() {
   const [remember, setRemember] = useState(true);
@@ -16,6 +17,11 @@ export function LoginForm() {
   return (
     <form
       className="space-y-4"
+      onSubmit={() => {
+        tapFeedback();
+        setPending(true);
+        setError(null);
+      }}
       action={async (formData) => {
         setPending(true);
         setError(null);
@@ -58,7 +64,7 @@ export function LoginForm() {
         Recordarme
       </label>
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-      <Button type="submit" className="w-full" disabled={pending}>
+      <Button type="submit" className="w-full" disabled={pending} busy={pending}>
         {pending ? "Ingresando..." : "Iniciar sesión"}
       </Button>
       <p className="text-center text-xs text-slate-500">

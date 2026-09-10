@@ -149,10 +149,75 @@ select option {
   }
 }
 
+.btn-press {
+  touch-action: manipulation;
+  transform-origin: center;
+  transition:
+    transform 0.12s ease,
+    filter 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.btn-press:active:not(:disabled):not(.is-busy) {
+  animation: btn-nudge 0.28s ease;
+}
+
+.btn-press.is-busy {
+  pointer-events: none;
+  opacity: 0.88;
+  animation: btn-busy-pulse 0.9s ease-in-out infinite;
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 999px;
+  animation: btn-spin 0.65s linear infinite;
+}
+
+@keyframes btn-nudge {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  35% {
+    transform: scale(0.94) rotate(-0.7deg);
+  }
+  70% {
+    transform: scale(0.97) rotate(0.5deg);
+  }
+  100% {
+    transform: scale(0.96) rotate(0deg);
+  }
+}
+
+@keyframes btn-busy-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+    transform: scale(1);
+  }
+  50% {
+    filter: brightness(1.08);
+    transform: scale(0.985);
+  }
+}
+
+@keyframes btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .alert-wiggle,
   .home-hero-drift,
-  .home-enter {
+  .home-enter,
+  .btn-press:active:not(:disabled):not(.is-busy),
+  .btn-press.is-busy {
     animation: none;
   }
 }

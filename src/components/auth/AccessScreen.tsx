@@ -17,6 +17,7 @@ import {
   UserIcon,
 } from "@/components/icons";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { tapFeedback } from "@/lib/tap-feedback";
 
 const LOGO = "/branding/logo-infinito-mark.png";
 
@@ -202,6 +203,12 @@ export function AccessScreen() {
 
               <form
                 className="space-y-3 sm:space-y-4"
+                onSubmit={() => {
+                  tapFeedback();
+                  setPending(true);
+                  setError(null);
+                  setHint(null);
+                }}
                 action={async (formData) => {
                   setPending(true);
                   setError(null);
@@ -306,8 +313,13 @@ export function AccessScreen() {
                 <button
                   type="submit"
                   disabled={pending}
-                  className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#A855F7] via-[#6366F1] to-[#22D3EE] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(99,102,241,0.35)] transition hover:brightness-110 disabled:opacity-70 sm:h-12"
+                  aria-busy={pending}
+                  onPointerDown={() => {
+                    if (!pending) tapFeedback();
+                  }}
+                  className={`btn-press flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#A855F7] via-[#6366F1] to-[#22D3EE] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(99,102,241,0.35)] hover:brightness-110 disabled:opacity-70 sm:h-12 ${pending ? "is-busy" : ""}`}
                 >
+                  {pending ? <span className="btn-spinner" aria-hidden="true" /> : null}
                   {pending ? "Ingresando..." : "Iniciar sesión"}
                   {pending ? null : <ArrowRightIcon className="h-4 w-4" />}
                 </button>
@@ -322,7 +334,8 @@ export function AccessScreen() {
               <div className="mt-3 grid grid-cols-2 gap-3 sm:mt-4">
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#070B14] text-sm font-medium text-white hover:bg-white/5 sm:h-12"
+                  className="btn-press flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#070B14] text-sm font-medium text-white hover:bg-white/5 sm:h-12"
+                  onPointerDown={() => tapFeedback()}
                   onClick={() => setError("El acceso con Google y Apple estará disponible pronto.")}
                 >
                   <GoogleMark />
@@ -330,7 +343,8 @@ export function AccessScreen() {
                 </button>
                 <button
                   type="button"
-                  className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#070B14] text-sm font-medium text-white hover:bg-white/5 sm:h-12"
+                  className="btn-press flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-[#070B14] text-sm font-medium text-white hover:bg-white/5 sm:h-12"
+                  onPointerDown={() => tapFeedback()}
                   onClick={() => setError("El acceso con Google y Apple estará disponible pronto.")}
                 >
                   <AppleMark />
