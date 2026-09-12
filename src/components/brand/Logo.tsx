@@ -11,6 +11,7 @@ export function AppBrand({
   size = "header",
   logoSrc,
   title,
+  tone = "dark",
 }: {
   compact?: boolean;
   href?: string;
@@ -18,6 +19,7 @@ export function AppBrand({
   size?: "header" | "sidebar";
   logoSrc?: string | null;
   title?: string;
+  tone?: "dark" | "light";
 }) {
   const showRole = Boolean(role) && !compact;
   const mark = logoSrc || INFINITY_SRC;
@@ -34,10 +36,10 @@ export function AppBrand({
         ? "h-11 w-auto"
         : "h-11 w-auto md:h-12";
   const titleClass = compact
-    ? "text-[15px] font-bold tracking-tight text-white sm:text-base"
+    ? `text-[15px] font-bold tracking-tight sm:text-base ${tone === "light" ? "text-[#0F172A]" : "text-white"}`
     : size === "sidebar"
-      ? "text-lg font-bold tracking-tight text-white"
-      : "text-base font-bold tracking-tight text-white md:text-lg";
+      ? `text-lg font-bold tracking-tight ${tone === "light" ? "text-[#0F172A]" : "text-white"}`
+      : `text-base font-bold tracking-tight md:text-lg ${tone === "light" ? "text-[#0F172A]" : "text-white"}`;
 
   return (
     <Link

@@ -6,18 +6,25 @@ export function FilterSelect({
   onChange,
   children,
   className = "min-w-[10.5rem] shrink-0",
+  tone = "dark",
 }: {
   value: string;
   onChange: (value: string) => void;
   children: ReactNode;
   className?: string;
+  tone?: "dark" | "light";
 }) {
+  const light = tone === "light";
   return (
     <div className={`relative ${className}`}>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full appearance-none rounded-lg border border-[#253047] bg-[#111827] py-0 pr-8 pl-3 text-sm text-[#E2E8F0] outline-none focus:ring-2 focus:ring-[#2563EB]"
+        className={
+          light
+            ? "h-10 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-white py-0 pr-8 pl-3 text-sm text-[#0F172A] outline-none focus:ring-2 focus:ring-[#2563EB]"
+            : "h-10 w-full appearance-none rounded-lg border border-[#253047] bg-[#111827] py-0 pr-8 pl-3 text-sm text-[#E2E8F0] outline-none focus:ring-2 focus:ring-[#2563EB]"
+        }
       >
         {children}
       </select>

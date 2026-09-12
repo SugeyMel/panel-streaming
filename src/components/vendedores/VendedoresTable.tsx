@@ -222,17 +222,18 @@ export function VendedoresTable({
   };
 
   return (
-    <div className="min-w-0 overflow-x-hidden bg-[#0B0F1A]">
+    <div className="min-w-0 min-h-[calc(100vh-7rem)] overflow-x-hidden bg-[#F4F7FB]">
       <div className="flex flex-col gap-3">
         <AccountsPageHeader
           title="Vendedores"
           subtitle="Gestiona las cuentas vendidas a tus vendedores"
           onFiltros={() => setPanel("filtros")}
           onAgregar={() => setPanel("cuenta")}
+          tone="light"
         />
-        <AccountsFilterBar {...filterProps} />
+        <AccountsFilterBar {...filterProps} tone="light" />
       </div>
-      <p className="mt-2 text-right text-xs text-[#94A3B8]">Total: {visible.length} cuentas</p>
+      <p className="mt-2 text-right text-xs text-[#64748B]">Total: {visible.length} cuentas</p>
       {aviso ? <p className="mt-2 text-sm font-medium text-[#16A34A]">{aviso}</p> : null}
 
       <div className="mt-4 overflow-x-auto md:overflow-x-auto">
@@ -248,10 +249,10 @@ export function VendedoresTable({
             <span className="px-2">Días</span>
             <span className="px-2">Estado</span>
             <span className="px-2 pr-4 text-right tracking-normal">Costo</span>
-            <span className="border-l border-[#253047] px-2 pl-3 text-right tracking-normal">Acciones</span>
+            <span className="border-l border-[#E8EEF6] px-2 pl-3 text-right tracking-normal">Acciones</span>
           </div>
           {paged.length === 0 ? (
-            <p className="rounded-xl border border-[#253047] bg-[#111827] px-4 py-10 text-center text-sm text-[#94A3B8]">
+            <p className="rounded-xl border border-[#E8EEF6] bg-white px-4 py-10 text-center text-sm text-[#64748B]">
               No hay cuentas para mostrar.
             </p>
           ) : (
@@ -259,31 +260,34 @@ export function VendedoresTable({
               const dias = diasDesdeVencimiento(cuenta.vencimiento);
               const health = estadoDesdeDias(dias);
               return (
-                <article key={cuenta.id} className="overflow-hidden rounded-xl border border-[#253047] bg-[#111827]">
-                  <div className={`${headerGrid} px-0 hover:bg-[#172033]/50`}>
+                <article key={cuenta.id} className="overflow-hidden rounded-xl border border-[#E8EEF6] bg-white">
+                  <div className={`${headerGrid} px-0 hover:bg-[#F8FAFC]`}>
                     <span className="px-3 py-3 text-sm text-[#94A3B8]">{rangeStart + index}</span>
                     <div className="flex min-w-0 items-center gap-2 px-2 py-3">
                       <ServiceMark name={cuenta.servicio} />
-                      <p className="truncate text-sm font-semibold text-[#F1F5F9]">{cuenta.servicio}</p>
+                      <p className="truncate text-sm font-semibold text-[#0F172A]">{cuenta.servicio}</p>
                     </div>
                     <div className="min-w-0 px-2 py-3">
                       {cuenta.vendedorTelefono ? (
                         <>
-                          <p className="truncate text-sm font-medium text-[#F1F5F9]">{cuenta.vendedorNombre ?? "—"}</p>
-                          <p className="text-xs text-[#94A3B8]">{whatsappParaMostrar(cuenta.vendedorTelefono)}</p>
+                          <p className="truncate text-sm font-medium text-[#0F172A]">{cuenta.vendedorNombre ?? "—"}</p>
+                          <p className="text-xs text-[#64748B]">{whatsappParaMostrar(cuenta.vendedorTelefono)}</p>
                         </>
                       ) : (
-                        <span className="text-sm text-[#94A3B8]">Sin asignar</span>
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-[#EAB308]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[#EAB308]" aria-hidden />
+                          Sin asignar
+                        </span>
                       )}
                     </div>
                     <div className="px-2 py-3">
-                      <CopyField id={`${cuenta.id}-mail`} value={cuenta.correo} copied={copied} onCopy={copyValue} />
+                      <CopyField id={`${cuenta.id}-mail`} value={cuenta.correo} copied={copied} onCopy={copyValue} tone="light" />
                     </div>
                     <div className="px-2 py-3">
-                      <CopyField id={`${cuenta.id}-clave`} value={cuenta.clave} copied={copied} onCopy={copyValue} />
+                      <CopyField id={`${cuenta.id}-clave`} value={cuenta.clave} copied={copied} onCopy={copyValue} tone="light" />
                     </div>
-                    <p className="truncate px-2 py-3 text-sm text-[#F1F5F9]">{cuenta.proveedor}</p>
-                    <div className="flex items-center gap-1 px-2 py-3 text-sm text-[#F1F5F9]">
+                    <p className="truncate px-2 py-3 text-sm text-[#0F172A]">{cuenta.proveedor}</p>
+                    <div className="flex items-center gap-1 px-2 py-3 text-sm text-[#0F172A]">
                       <span>{formatDdMmYyyy(cuenta.vencimiento)}</span>
                       <button type="button" className="text-[#94A3B8]" aria-label="Vencimiento">
                         <CalendarIcon className="h-3.5 w-3.5" />
@@ -291,17 +295,18 @@ export function VendedoresTable({
                     </div>
                     <span className={`px-2 py-3 text-sm font-semibold ${colorDias(health)}`}>{dias}</span>
                     <div className="px-2 py-3">
-                      <HealthStatusBadge status={health} />
+                      <HealthStatusBadge status={health} look="soft" />
                     </div>
                     <p className="px-2 pr-4 py-3 text-right text-sm">
                       {cuenta.costo === undefined ? (
                         <span className="text-[#94A3B8]">—</span>
                       ) : (
-                        <span className="text-[#F1F5F9]">{formatCosto(cuenta.costo)}</span>
+                        <span className="text-[#0F172A]">{formatCosto(cuenta.costo)}</span>
                       )}
                     </p>
-                    <div className="relative flex items-center justify-end gap-0.5 border-l border-[#253047] px-2 py-2">
+                    <div className="relative flex items-center justify-end gap-0.5 border-l border-[#E8EEF6] px-2 py-2">
                       <AccountRowActions
+                        tone="light"
                         plantillas={plantillas}
                         whatsapp={
                           cuenta.vendedorTelefono
@@ -319,10 +324,10 @@ export function VendedoresTable({
                         onMore={() => setMenu(menu === cuenta.id ? null : cuenta.id)}
                       />
                       {menu === cuenta.id ? (
-                        <div className="absolute top-10 right-2 z-20 w-40 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs">
+                        <div className="absolute top-10 right-2 z-20 w-40 rounded-lg border border-[#E8EEF6] bg-white py-1 text-xs text-[#0F172A] shadow-sm">
                           <button
                             type="button"
-                            className="block w-full px-3 py-2 text-left hover:bg-[#172033]"
+                            className="block w-full px-3 py-2 text-left hover:bg-[#F8FAFC]"
                             onClick={() => {
                               setDetail(cuenta.id);
                               setMenu(null);
@@ -353,6 +358,7 @@ export function VendedoresTable({
           setFilasPorPagina(parseFilasPorPagina(String(value)));
           goPage1();
         }}
+        tone="light"
       />
 
       <Modal open={Boolean(detail)} title="Detalle" onClose={() => setDetail(null)}>
@@ -361,7 +367,7 @@ export function VendedoresTable({
 
       <Modal open={panel === "filtros"} title="Filtros avanzados" onClose={() => setPanel(null)}>
         <div className="space-y-3">
-          <AccountsFilterBar {...filterProps} stacked />
+          <AccountsFilterBar {...filterProps} stacked tone="light" />
           <div className="flex flex-col gap-2 pt-2 sm:flex-row">
             <Button type="button" variant="toolbar" className="w-full" onClick={limpiarFiltros}>
               Limpiar filtros

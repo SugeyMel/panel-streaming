@@ -32,12 +32,14 @@ export function AlertsBell({
   footerLabel,
   empty = "No hay avisos.",
   wiggle = false,
+  tone = "dark",
 }: {
   alerts: HeaderAlert[];
   footerHref: string;
   footerLabel: string;
   empty?: string;
   wiggle?: boolean;
+  tone?: "dark" | "light";
 }) {
   const [open, setOpen] = useState(false);
   const [stopped, setStopped] = useState(false);
@@ -72,7 +74,11 @@ export function AlertsBell({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        className={`relative flex h-10 w-10 items-center justify-center rounded-full border border-[#253047] bg-[#111827] text-[#94A3B8] ${moving ? "alert-wiggle" : ""}`}
+        className={`relative flex h-10 w-10 items-center justify-center rounded-full border ${
+          tone === "light"
+            ? "border-[#E2E8F0] bg-white text-[#64748B]"
+            : "border-[#253047] bg-[#111827] text-[#94A3B8]"
+        } ${moving ? "alert-wiggle" : ""}`}
         aria-label="Avisos"
         aria-expanded={open}
         onClick={() => {
@@ -125,7 +131,7 @@ export function AlertsBell({
   );
 }
 
-export function SellerBell({ alerts }: { alerts: SellerBellAlert[] }) {
+export function SellerBell({ alerts, tone = "dark" }: { alerts: SellerBellAlert[]; tone?: "dark" | "light" }) {
   return (
     <AlertsBell
       alerts={alerts.map((item) => ({
@@ -137,6 +143,7 @@ export function SellerBell({ alerts }: { alerts: SellerBellAlert[] }) {
       footerHref="/panel/pedidos"
       footerLabel="Ver pedidos"
       empty="No hay avisos pendientes."
+      tone={tone}
     />
   );
 }

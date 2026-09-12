@@ -11,6 +11,7 @@ export function AccountsPagination({
   filasPorPagina,
   onFilasPorPagina,
   noun = "cuentas",
+  tone = "dark",
 }: {
   total: number;
   rangeStart: number;
@@ -21,18 +22,24 @@ export function AccountsPagination({
   filasPorPagina: FilasPorPagina;
   onFilasPorPagina: (value: FilasPorPagina) => void;
   noun?: string;
+  tone?: "dark" | "light";
 }) {
+  const light = tone === "light";
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-      <p className="shrink-0 text-sm text-[#94A3B8]">
+      <p className={`shrink-0 text-sm ${light ? "text-[#64748B]" : "text-[#94A3B8]"}`}>
         {total === 0 ? `Mostrando 0 - 0 de 0 ${noun}` : `Mostrando ${rangeStart} - ${rangeEnd} de ${total} ${noun}`}
       </p>
-      <label className="inline-flex shrink-0 items-center gap-2 text-sm text-[#94A3B8]">
+      <label className={`inline-flex shrink-0 items-center gap-2 text-sm ${light ? "text-[#64748B]" : "text-[#94A3B8]"}`}>
         Mostrar
         <select
           value={String(filasPorPagina)}
           onChange={(event) => onFilasPorPagina(parseFilasPorPagina(event.target.value))}
-          className="h-9 w-[4.75rem] shrink-0 rounded-lg border border-[#253047] bg-[#0B111C] px-2 text-sm text-[#F8FAFC] outline-none"
+          className={
+            light
+              ? "h-9 w-[4.75rem] shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-2 text-sm text-[#0F172A] outline-none"
+              : "h-9 w-[4.75rem] shrink-0 rounded-lg border border-[#253047] bg-[#0B111C] px-2 text-sm text-[#F8FAFC] outline-none"
+          }
         >
           {FILAS_POR_PAGINA_OPCIONES.map((size) => (
             <option key={size} value={String(size)}>
@@ -42,19 +49,30 @@ export function AccountsPagination({
         </select>
       </label>
       <div className="ml-auto">
-        <Pager page={page} pageCount={pageCount} onPage={onPage} />
+        <Pager page={page} pageCount={pageCount} onPage={onPage} tone={tone} />
       </div>
     </div>
   );
 }
 
-function Pager({ page, pageCount, onPage }: { page: number; pageCount: number; onPage: (page: number) => void }) {
+function Pager({
+  page,
+  pageCount,
+  onPage,
+  tone = "dark",
+}: {
+  page: number;
+  pageCount: number;
+  onPage: (page: number) => void;
+  tone?: "dark" | "light";
+}) {
   const pages = Array.from({ length: pageCount }, (_, index) => index + 1);
+  const light = tone === "light";
   return (
     <div className="flex items-center gap-1">
       <button
         type="button"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#94A3B8] disabled:opacity-40"
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-40 ${light ? "text-[#64748B]" : "text-[#94A3B8]"}`}
         disabled={page <= 1}
         aria-label="Anterior"
         onClick={() => onPage(page - 1)}
@@ -67,7 +85,11 @@ function Pager({ page, pageCount, onPage }: { page: number; pageCount: number; o
           type="button"
           onClick={() => onPage(item)}
           className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold ${
-            page === item ? "bg-[#2563EB] text-white" : "bg-transparent text-[#94A3B8] hover:bg-[#172033]"
+            page === item
+              ? "bg-[#2563EB] text-white"
+              : light
+                ? "bg-transparent text-[#64748B] hover:bg-[#E2E8F0]"
+                : "bg-transparent text-[#94A3B8] hover:bg-[#172033]"
           }`}
         >
           {item}
@@ -75,7 +97,7 @@ function Pager({ page, pageCount, onPage }: { page: number; pageCount: number; o
       ))}
       <button
         type="button"
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md text-[#94A3B8] disabled:opacity-40"
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-md disabled:opacity-40 ${light ? "text-[#64748B]" : "text-[#94A3B8]"}`}
         disabled={page >= pageCount}
         aria-label="Siguiente"
         onClick={() => onPage(page + 1)}

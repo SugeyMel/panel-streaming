@@ -100,6 +100,21 @@ export function DashboardShell({
       item.href === home ? pathname === item.href : pathname.startsWith(item.href),
     );
   const adminFinanceActive = adminApp && pathname.startsWith("/admin/finanzas");
+  const sellerLight = sellerApp && (pathname === "/panel/clientes" || pathname === "/panel/vendedores");
+
+  useEffect(() => {
+    if (!sellerLight) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtml = html.style.background;
+    const prevBody = body.style.background;
+    html.style.background = "#F4F7FB";
+    body.style.background = "#F4F7FB";
+    return () => {
+      html.style.background = prevHtml;
+      body.style.background = prevBody;
+    };
+  }, [sellerLight]);
 
   useEffect(() => {
     function onPointer(event: MouseEvent) {
@@ -110,7 +125,11 @@ export function DashboardShell({
   }, []);
 
   return (
-    <div className={`min-h-screen text-[#F8FAFC] ${adminApp ? "bg-[#0B0F1A]" : customerApp ? "bg-[#0B0F19]" : "bg-[#070B12]"}`}>
+    <div className={`min-h-screen ${
+      sellerLight
+        ? "bg-[#F4F7FB] text-[#0F172A]"
+        : `text-[#F8FAFC] ${adminApp ? "bg-[#0B0F1A]" : customerApp ? "bg-[#0B0F19]" : "bg-[#070B12]"}`
+    }`}>
       <div className={sellerApp ? "" : "lg:grid lg:grid-cols-[272px_1fr]"}>
         {sellerApp ? null : (
         <aside className="hidden min-h-screen flex-col border-r border-[#253047] bg-[#0B0F1A] lg:flex">
@@ -187,15 +206,17 @@ export function DashboardShell({
 
         <div className="min-h-screen">
           <header
-            className={`sticky top-0 z-20 border-b border-[#253047] backdrop-blur-xl ${
-              adminApp ? "bg-[#0B0F1A]/92" : customerApp ? "bg-[#0B0F19]/92" : "bg-[#070B12]/92"
+            className={`sticky top-0 z-20 border-b backdrop-blur-xl ${
+              sellerLight
+                ? "border-[#E2E8F0] bg-[#F4F7FB]/95"
+                : `border-[#253047] ${adminApp ? "bg-[#0B0F1A]/92" : customerApp ? "bg-[#0B0F19]/92" : "bg-[#070B12]/92"}`
             } ${customerSubflow ? "hidden lg:block" : ""}`}
           >
-            <div className={adminApp ? "hidden" : "hidden h-1 bg-gradient-to-r from-[#8B5CF6] via-[#3B82F6] to-[#06B6D4] lg:block"} />
+            <div className={adminApp || sellerLight ? "hidden" : "hidden h-1 bg-gradient-to-r from-[#8B5CF6] via-[#3B82F6] to-[#06B6D4] lg:block"} />
             <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-6 lg:px-5 lg:py-2.5">
               <div className={`flex min-w-0 items-center gap-6 ${sellerApp ? "" : "lg:hidden"}`}>
                 <span className="inline-flex min-w-0 items-center gap-2">
-                  <AppBrand compact href={home} logoSrc={brandLogoUrl} title={brandTitle} />
+                  <AppBrand compact href={home} logoSrc={brandLogoUrl} title={brandTitle} tone={sellerLight ? "light" : "dark"} />
                   {variant === "admin" ? (
                     <span className="shrink-0 rounded-full bg-[#1D4ED8]/40 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-[#93C5FD]">
                       Admin
@@ -212,7 +233,13 @@ export function DashboardShell({
                           key={item.href}
                           href={item.href}
                           className={`shrink-0 rounded-full px-3 py-2 text-sm font-medium ${
-                            active ? "bg-[#172033] text-[#F8FAFC]" : "text-[#94A3B8] hover:text-[#F8FAFC]"
+                            sellerLight
+                              ? active
+                                ? "bg-white text-[#0F172A] shadow-sm"
+                                : "text-[#64748B] hover:text-[#0F172A]"
+                              : active
+                                ? "bg-[#172033] text-[#F8FAFC]"
+                                : "text-[#94A3B8] hover:text-[#F8FAFC]"
                           }`}
                         >
                           {item.label}
@@ -258,8 +285,12 @@ export function DashboardShell({
                       className={`inline-flex h-10 items-center gap-1 rounded-full border px-3 text-sm font-medium ${
                         (sellerApp && (sellerMoreActive || desktopMore)) ||
                         (adminApp && (adminFinanceActive || desktopMore))
-                          ? "border-[#8B5CF6] bg-[#172033] text-[#F8FAFC]"
-                          : "border-[#253047] bg-[#111827] text-[#F8FAFC]"
+                          ? sellerLight
+                            ? "border-[#CBD5E1] bg-white text-[#0F172A] shadow-sm"
+                            : "border-[#8B5CF6] bg-[#172033] text-[#F8FAFC]"
+                          : sellerLight
+                            ? "border-[#E2E8F0] bg-white text-[#0F172A]"
+                            : "border-[#253047] bg-[#111827] text-[#F8FAFC]"
                       }`}
                       aria-expanded={desktopMore}
                       onClick={() => setDesktopMore((value) => !value)}
@@ -311,7 +342,7 @@ export function DashboardShell({
                         🔥
                       </span>
                     </Link>
-                    <SellerBell alerts={pendingAlerts} />
+                    <SellerBell alerts={pendingAlerts} tone={sellerLight ? "light" : "dark"} />
                   </>
                 ) : variant === "customer" ? (
                   <AlertsBell
@@ -361,6 +392,8 @@ export function DashboardShell({
             className={
               adminApp
                 ? "px-3 py-3 pb-24 sm:px-4 lg:px-6 lg:py-3 lg:pb-4"
+                : sellerApp && (pathname === "/panel/clientes" || pathname === "/panel/vendedores")
+                  ? "bg-[#F4F7FB] px-3 py-3 pb-24 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
                 : sellerApp && pathname === "/panel/pedidos"
                   ? "px-3 py-3 pb-24 sm:px-6 lg:px-8 lg:py-6 lg:pb-8"
                   : customerApp

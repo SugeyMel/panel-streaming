@@ -23,9 +23,11 @@ const ITEMS: Array<{ tipo: TipoMensajeWhatsapp; label: string; Icon: typeof Cloc
 export function WhatsAppMenu({
   destino,
   plantillas,
+  tone = "dark",
 }: {
   destino: DestinoWhatsapp | null;
   plantillas?: PlantillasWhatsapp;
+  tone?: "dark" | "light";
 }) {
   const enabled = Boolean(destino && construirEnlaceWhatsapp({ ...destino, plantillas }));
   const menuId = useId();
@@ -122,7 +124,9 @@ export function WhatsAppMenu({
         className={
           enabled
             ? "relative inline-flex h-[34px] w-[34px] items-center justify-center rounded-lg border border-[rgba(37,211,102,0.45)] bg-[#25D366] text-white shadow-[0_0_0_3px_rgba(37,211,102,0.12)] transition-[background-color,box-shadow,transform] duration-150 hover:bg-[#1FB855] hover:shadow-[0_0_0_3px_rgba(37,211,102,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366] active:scale-[0.96]"
-            : "relative inline-flex h-[34px] w-[34px] cursor-not-allowed items-center justify-center rounded-lg border border-transparent bg-[#1F2937] text-[#64748B]"
+            : tone === "light"
+              ? "relative inline-flex h-[34px] w-[34px] cursor-not-allowed items-center justify-center rounded-lg border border-[#FDE68A] bg-[#FEF3C7] text-[#D97706]"
+              : "relative inline-flex h-[34px] w-[34px] cursor-not-allowed items-center justify-center rounded-lg border border-transparent bg-[#1F2937] text-[#64748B]"
         }
         onClick={() => {
           if (!enabled) return;
@@ -131,7 +135,7 @@ export function WhatsAppMenu({
         }}
       >
         <WhatsAppIcon className="h-[18px] w-[18px]" />
-        {enabled ? null : (
+        {enabled ? null : tone === "light" ? null : (
           <span className="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-amber-400" aria-hidden />
         )}
       </button>

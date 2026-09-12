@@ -57,9 +57,15 @@ const healthClass: Record<HealthStatus, string> = {
   vencido: "bg-[#DC2626] text-white",
 };
 
-export function HealthStatusBadge({ status }: { status: HealthStatus }) {
+const healthClassSoft: Record<HealthStatus, string> = {
+  activo: "bg-[#DCFCE7] text-[#16A34A]",
+  por_vencer: "bg-[#FEF3C7] text-[#D97706]",
+  vencido: "bg-[#FEE2E2] text-[#DC2626]",
+};
+
+export function HealthStatusBadge({ status, look = "solid" }: { status: HealthStatus; look?: "solid" | "soft" }) {
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${healthClass[status]}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap ${look === "soft" ? healthClassSoft[status] : healthClass[status]}`}>
       {healthLabel[status]}
     </span>
   );

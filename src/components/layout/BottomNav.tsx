@@ -43,8 +43,12 @@ export function BottomNav({
     variant === "admin" &&
     (moreOpen || !adminPrimaryNav.some((item) => isActive(pathname, item.href, home)));
 
+  const light = variant === "seller" && (pathname === "/panel/clientes" || pathname === "/panel/vendedores");
+
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#253047] bg-[#0B111C]/96 pb-[max(0.4rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
+    <nav className={`fixed inset-x-0 bottom-0 z-30 border-t pb-[max(0.4rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden ${
+      light ? "border-[#E2E8F0] bg-[#F4F7FB]/96" : "border-[#253047] bg-[#0B111C]/96"
+    }`}>
       <div
         className={`grid items-center px-1 pt-1 ${
           variant === "seller" ? "grid-cols-6" : variant === "admin" ? "grid-cols-4" : "grid-cols-5"
@@ -53,9 +57,9 @@ export function BottomNav({
         {variant === "seller" ? (
           <>
             {sellerPrimaryNav.map((item) => (
-              <Tab key={item.href} item={item} home={home} pathname={pathname} />
+              <Tab key={item.href} item={item} home={home} pathname={pathname} light={light} />
             ))}
-            <MoreTab onMore={onMore} active={sellerMoreActive} />
+            <MoreTab onMore={onMore} active={sellerMoreActive} light={light} />
           </>
         ) : (
           <>
@@ -75,11 +79,13 @@ function Tab({
   home,
   pathname,
   badge = 0,
+  light = false,
 }: {
   item: NavItem;
   home: string;
   pathname: string;
   badge?: number;
+  light?: boolean;
 }) {
   const active = isActive(pathname, item.href, home);
   const Icon = item.icon;
@@ -88,11 +94,17 @@ function Tab({
       href={item.href}
       prefetch={false}
       className={`flex min-h-14 flex-col items-center justify-center gap-0.5 px-0.5 text-center text-[10px] leading-tight font-medium ${
-        active ? "text-[#60A5FA]" : "text-[#94A3B8]"
+        light
+          ? active
+            ? "text-[#2563EB]"
+            : "text-[#64748B]"
+          : active
+            ? "text-[#60A5FA]"
+            : "text-[#94A3B8]"
       }`}
     >
-      <span className={`relative rounded-xl p-1 ${active ? "bg-[#1D4ED8]/35" : ""}`}>
-        <Icon className={`h-5 w-5 ${active ? "text-[#60A5FA]" : ""}`} />
+      <span className={`relative rounded-xl p-1 ${active ? (light ? "bg-[#DBEAFE]" : "bg-[#1D4ED8]/35") : ""}`}>
+        <Icon className={`h-5 w-5 ${active ? (light ? "text-[#2563EB]" : "text-[#60A5FA]") : ""}`} />
         {badge > 0 ? (
           <span className="absolute -top-1.5 -right-2 min-w-4 rounded-full bg-[#EF4444] px-1 text-[9px] font-semibold leading-4 text-white">
             {badge > 9 ? "9+" : badge}
@@ -104,13 +116,13 @@ function Tab({
   );
 }
 
-function MoreTab({ onMore, active = false }: { onMore: () => void; active?: boolean }) {
+function MoreTab({ onMore, active = false, light = false }: { onMore: () => void; active?: boolean; light?: boolean }) {
   return (
     <button
       type="button"
       onClick={onMore}
       className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium ${
-        active ? "text-[#A78BFA]" : "text-[#94A3B8]"
+        light ? (active ? "text-[#2563EB]" : "text-[#64748B]") : active ? "text-[#A78BFA]" : "text-[#94A3B8]"
       }`}
     >
       <MenuIcon className="h-5 w-5" />

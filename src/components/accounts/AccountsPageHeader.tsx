@@ -9,6 +9,7 @@ export function AccountsPageHeader({
   onAgregar,
   addLabel = "+ Agregar cuenta",
   extraActions,
+  tone = "dark",
 }: {
   title: string;
   subtitle: string;
@@ -16,12 +17,13 @@ export function AccountsPageHeader({
   onAgregar: () => void;
   addLabel?: string;
   extraActions?: ReactNode;
+  tone?: "dark" | "light";
 }) {
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
       <div className="min-w-0">
-        <h1 className="text-2xl font-bold text-white">{title}</h1>
-        <p className="mt-1 text-sm text-[#94A3B8]">{subtitle}</p>
+        <h1 className={`text-2xl font-bold ${tone === "light" ? "text-[#0F172A]" : "text-white"}`}>{title}</h1>
+        <p className={`mt-1 text-sm ${tone === "light" ? "text-[#64748B]" : "text-[#94A3B8]"}`}>{subtitle}</p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
         {extraActions}
