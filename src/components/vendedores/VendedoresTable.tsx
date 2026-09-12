@@ -260,7 +260,7 @@ export function VendedoresTable({
               const dias = diasDesdeVencimiento(cuenta.vencimiento);
               const health = estadoDesdeDias(dias);
               return (
-                <article key={cuenta.id} className="overflow-hidden rounded-xl border border-[#E8EEF6] bg-white">
+                <article key={cuenta.id} className="overflow-hidden rounded-xl border-2 border-black bg-white">
                   <div className={`${headerGrid} px-0 hover:bg-[#F8FAFC]`}>
                     <span className="px-3 py-3 text-sm text-[#94A3B8]">{rangeStart + index}</span>
                     <div className="flex min-w-0 items-center gap-2 px-2 py-3">
