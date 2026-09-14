@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, type ReactNode } from "react";
-import { setSellerStatusAction, upsertSellerAction } from "@/app/actions/business";
+import { deleteSellerAction, setSellerStatusAction, upsertSellerAction } from "@/app/actions/business";
 import {
   BanIcon,
   BellIcon,
@@ -50,6 +50,7 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Seller | null>(null);
   const [confirm, setConfirm] = useState<Seller | null>(null);
+  const [removing, setRemoving] = useState<Seller | null>(null);
   const [cobro, setCobro] = useState<Seller | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
@@ -187,6 +188,7 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
               color={AVATAR[index % AVATAR.length]}
               onEdit={() => startEdit(seller)}
               onSuspend={() => setConfirm(seller)}
+              onDelete={() => setRemoving(seller)}
               onCobro={() => setCobro(seller)}
             />
           ))}
@@ -195,6 +197,7 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
 
       <Modal open={open} title={editing ? "Editar vendedor" : "Crear vendedor"} onClose={() => setOpen(false)}>
         <form
+          key={editing?.id ?? "nuevo"}
           className="space-y-3"
           action={async (formData) => {
             const wasCreate = !editing;
@@ -208,17 +211,58 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
             }
           }}
         >
-          <input name="name" defaultValue={editing?.name} placeholder="Nombre" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
-          <input name="businessName" defaultValue={editing?.businessName} placeholder="Negocio" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
-          <input name="slug" defaultValue={editing?.slug} placeholder="slug" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
-          <input name="email" defaultValue={editing?.email} placeholder="Correo" className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">Nombre</span>
+            <input name="name" defaultValue={editing?.name} placeholder="Nombre del vendedor" required className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">Nombre del negocio</span>
+            <input name="businessName" defaultValue={editing?.businessName} placeholder="Negocio" required className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">Slug (tienda)</span>
+            <input name="slug" defaultValue={editing?.slug} placeholder="mi-negocio" required className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">Correo de acceso a la web</span>
+            <input name="email" type="email" defaultValue={editing?.email} placeholder="vendedor@correo.com" required className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2" />
+          </label>
           <WhatsAppInput name="whatsapp" defaultValue={editing?.whatsapp} required />
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">
+              {editing?.userId ? "Nueva clave (opcional)" : "Clave de acceso a la web"}
+            </span>
+            <input
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              placeholder={editing?.userId ? "Dejar vacío para no cambiarla" : "Mínimo 6 caracteres"}
+              required={!editing?.userId}
+              minLength={editing?.userId ? undefined : 6}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-xs text-[#94A3B8]">Confirmar clave</span>
+            <input
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              placeholder="Repite la clave"
+              required={!editing?.userId}
+              minLength={editing?.userId ? undefined : 6}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+            />
+          </label>
           <select name="status" defaultValue={editing?.status ?? "activo"} className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2">
             <option value="activo">Activo</option>
             <option value="pendiente">Pendiente</option>
             <option value="suspendido">Suspendido</option>
             <option value="desactivado">Desactivado</option>
           </select>
+          <p className="text-xs text-[#94A3B8]">
+            El vendedor entra en Login → pestaña Vendedor, con este correo y esta clave.
+          </p>
           <Button type="submit" className="w-full">
             Guardar
           </Button>
@@ -237,6 +281,21 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
           const result = await setSellerStatusAction(confirm.id, next);
           setMessage(result.ok ? "Estado actualizado." : result.error ?? "No se pudo actualizar");
           setConfirm(null);
+        }}
+      />
+
+      <ConfirmationDialog
+        open={Boolean(removing)}
+        title="Eliminar vendedor"
+        description={`Se borrará ${removing?.name ?? "este vendedor"}, su acceso a la web y los datos de su panel. Esta acción no se puede deshacer.`}
+        confirmLabel="Eliminar"
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => {
+          if (!removing) return;
+          const result = await deleteSellerAction(removing.id);
+          setMessage(result.ok ? "Vendedor eliminado." : result.error ?? "No se pudo eliminar");
+          setRemoving(null);
+          if (result.ok) router.refresh();
         }}
       />
 
@@ -278,12 +337,14 @@ function SellerCard({
   color,
   onEdit,
   onSuspend,
+  onDelete,
   onCobro,
 }: {
   seller: Seller;
   color: string;
   onEdit: () => void;
   onSuspend: () => void;
+  onDelete: () => void;
   onCobro: () => void;
 }) {
   const [more, setMore] = useState(false);
@@ -303,6 +364,11 @@ function SellerCard({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white lg:text-base">{seller.name}</p>
               <p className="truncate text-[11px] uppercase tracking-wide text-[#94A3B8] lg:text-sm">{seller.businessName || "Sin negocio"}</p>
+              {seller.userId ? (
+                <p className="mt-0.5 truncate text-[10px] text-[#67E8F9]">{seller.email || "Con acceso web"}</p>
+              ) : (
+                <p className="mt-0.5 text-[10px] text-[#FBBF24]">Sin acceso web · edita y pon correo + clave</p>
+              )}
               <span
                 className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                   seller.status === "activo"
@@ -348,6 +414,16 @@ function SellerCard({
                     }}
                   >
                     Copiar WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-sm text-[#FCA5A5] hover:bg-[#7F1D1D]/40"
+                    onClick={() => {
+                      setMore(false);
+                      onDelete();
+                    }}
+                  >
+                    Eliminar
                   </button>
                 </div>
               ) : null}

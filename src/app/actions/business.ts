@@ -139,6 +139,69 @@ export async function signOutAction() {
   redirect("/login");
 }
 
+async function ensureSellerWebAccess(options: {
+  profileId: string | null;
+  email: string;
+  name: string;
+  whatsapp: string;
+  password: string;
+}): Promise<{ ok: true; profileId: string } | { ok: false; error: string }> {
+  const admin = createServiceClient();
+  if (!admin) {
+    return { ok: false, error: "Falta SUPABASE_SERVICE_ROLE_KEY en el servidor para crear el acceso." };
+  }
+
+  if (options.profileId) {
+    const patch: {
+      email: string;
+      email_confirm: true;
+      user_metadata: { full_name: string; role: "seller"; phone: string };
+      password?: string;
+    } = {
+      email: options.email,
+      email_confirm: true,
+      user_metadata: { full_name: options.name, role: "seller", phone: options.whatsapp },
+    };
+    if (options.password) patch.password = options.password;
+    const { error } = await admin.auth.admin.updateUserById(options.profileId, patch);
+    if (error) return { ok: false, error: error.message };
+    await admin
+      .from("profiles")
+      .update({
+        role: "seller",
+        full_name: options.name,
+        email: options.email,
+        whatsapp: options.whatsapp,
+      })
+      .eq("id", options.profileId);
+    return { ok: true, profileId: options.profileId };
+  }
+
+  if (!options.password) {
+    return { ok: false, error: "La clave de acceso es obligatoria." };
+  }
+
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email: options.email,
+    password: options.password,
+    email_confirm: true,
+    user_metadata: { full_name: options.name, role: "seller", phone: options.whatsapp },
+  });
+  if (createError || !created.user) {
+    return { ok: false, error: createError?.message ?? "No se pudo crear el acceso a la web." };
+  }
+  await admin
+    .from("profiles")
+    .update({
+      role: "seller",
+      full_name: options.name,
+      email: options.email,
+      whatsapp: options.whatsapp,
+    })
+    .eq("id", created.user.id);
+  return { ok: true, profileId: created.user.id };
+}
+
 export async function upsertSellerAction(formData: FormData) {
   const blocked = ensureLive();
   if (blocked) return blocked;
@@ -148,11 +211,13 @@ export async function upsertSellerAction(formData: FormData) {
   if (!supabase) return { ok: false, error: "Sin cliente" };
 
   const id = String(formData.get("id") ?? "");
+  const password = String(formData.get("password") ?? "");
+  const confirm = String(formData.get("confirmPassword") ?? "");
   const payload = {
     name: String(formData.get("name") ?? "").trim(),
     business_name: String(formData.get("businessName") ?? "").trim(),
     slug: String(formData.get("slug") ?? "").trim(),
-    email: String(formData.get("email") ?? "").trim(),
+    email: String(formData.get("email") ?? "").trim().toLowerCase(),
     whatsapp: whatsappParaGuardar(String(formData.get("whatsapp") ?? "")),
     status: uiSellerStatusToDb(String(formData.get("status") ?? "pendiente") as SellerStatus),
     yape_holder: String(formData.get("yapeHolder") ?? ""),
@@ -161,14 +226,84 @@ export async function upsertSellerAction(formData: FormData) {
     plin_number: String(formData.get("plinNumber") ?? ""),
   };
   if (!payload.name || !payload.slug) return { ok: false, error: "Nombre y slug son obligatorios." };
+  if (!payload.business_name) return { ok: false, error: "El nombre del negocio es obligatorio." };
+  if (!payload.email || !payload.email.includes("@")) {
+    return { ok: false, error: "El correo es obligatorio para el acceso a la web." };
+  }
   if (!payload.whatsapp) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
 
+  let profileId: string | null = null;
+  if (id) {
+    const { data: existing } = await supabase.from("sellers").select("profile_id").eq("id", id).maybeSingle();
+    profileId = existing?.profile_id ? String(existing.profile_id) : null;
+  }
+
+  const creatingLogin = !id || !profileId || Boolean(password);
+  if (creatingLogin) {
+    if (password.length < 6) return { ok: false, error: "La clave de acceso debe tener al menos 6 caracteres." };
+    if (password !== confirm) return { ok: false, error: "Las claves no coinciden." };
+  }
+
+  const access = await ensureSellerWebAccess({
+    profileId,
+    email: payload.email,
+    name: payload.name,
+    whatsapp: payload.whatsapp,
+    password,
+  });
+  if (!access.ok) return access;
+  profileId = access.profileId;
+
+  const row = profileId ? { ...payload, profile_id: profileId } : payload;
   const query = id
-    ? supabase.from("sellers").update(payload).eq("id", id)
-    : supabase.from("sellers").insert(payload);
+    ? supabase.from("sellers").update(row).eq("id", id)
+    : supabase.from("sellers").insert(row);
   const { error } = await query;
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (!id && profileId) {
+      const admin = createServiceClient();
+      await admin?.auth.admin.deleteUser(profileId);
+    }
+    return { ok: false, error: error.message };
+  }
   revalidatePath("/admin/vendedores");
+  return { ok: true };
+}
+
+export async function deleteSellerAction(id: string) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["superadmin"]);
+  const writer = createServiceClient() ?? (await createClient());
+  if (!writer) return { ok: false, error: "Sin cliente" };
+
+  const sellerId = id.trim();
+  if (!sellerId) return { ok: false, error: "Vendedor no encontrado." };
+
+  const { data: existing, error: loadError } = await writer
+    .from("sellers")
+    .select("id, profile_id")
+    .eq("id", sellerId)
+    .maybeSingle();
+  if (loadError) return { ok: false, error: loadError.message };
+  if (!existing) return { ok: false, error: "Vendedor no encontrado." };
+
+  const profileId = existing.profile_id ? String(existing.profile_id) : null;
+
+  const { error: wholesaleError } = await writer.from("wholesale_sales").delete().eq("seller_id", sellerId);
+  if (wholesaleError) return { ok: false, error: wholesaleError.message };
+
+  const { error } = await writer.from("sellers").delete().eq("id", sellerId);
+  if (error) return { ok: false, error: error.message };
+
+  if (profileId) {
+    const admin = createServiceClient();
+    await admin?.auth.admin.deleteUser(profileId);
+  }
+
+  revalidatePath("/admin/vendedores");
+  revalidatePath("/admin");
   return { ok: true };
 }
 
