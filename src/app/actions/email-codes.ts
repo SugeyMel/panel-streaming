@@ -661,3 +661,88 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     message: "Código temporal encontrado",
   };
 }
+
+/**
+ * Consulta de código desde el panel del vendedor (pantalla "Consultas").
+ * Reutiliza las mismas reglas que la consulta del cliente: solo funciona con correos
+ * que el vendedor ya habilitó en "Mi Bot", aplica el filtro de mensajes y nunca
+ * devuelve el contenido del correo, solo el código temporal.
+ */
+export async function sellerLookupCodeAction(platformId: string, emailInput: string): Promise<EmailLookupResult> {
+  const blocked = (status: EmailLookupResult["status"], message: string): EmailLookupResult => ({
+    type: "UNKNOWN_BLOCKED",
+    status,
+    message,
+  });
+
+  const session = await getAppSession();
+  requireRole(session, ["seller"]);
+  const sellerId = session.sellerId;
+  const email = String(emailInput ?? "").trim();
+  if (!sellerId) return blocked("DENIED", "No pudimos validar tu sesión.");
+  if (!platformId || !email) {
+    return blocked("DENIED", "Selecciona una plataforma e ingresa el correo de la cuenta.");
+  }
+
+  const [platforms, mailboxes] = await Promise.all([loadPlatforms(), loadConnectedEmails(sellerId)]);
+  const platform = platforms.find((item) => item.id === platformId);
+  if (!platform) return blocked("DENIED", "Esa plataforma no está disponible.");
+
+  const mailbox = mailboxes.find(
+    (item) =>
+      item.codesEnabled &&
+      mailboxMatchesService(item.email, email) &&
+      (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(platformId)),
+  );
+  if (!mailbox) {
+    return blocked("DENIED", "Ese correo no está habilitado en Mi Bot para códigos automáticos.");
+  }
+
+  const [globalFilter, sellerFilter] = await Promise.all([
+    loadEmailFilterPolicy(null),
+    loadEmailFilterPolicy(sellerId),
+  ]);
+  const policy = mergeEmailFilterPolicies(globalFilter, sellerFilter);
+  const notFound = blocked(
+    "NOT_FOUND",
+    "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
+  );
+
+  if (session.mode === "demo") {
+    for (const message of simulatedRecentMessages(platform)) {
+      const verdict = classifyEmailMessage(message, policy, platform);
+      if (verdict.decision !== "allow") continue;
+      return {
+        type: verdict.type,
+        status: "FOUND",
+        code: extractAccessCode(`${message.subject} ${message.snippet ?? ""}`) ?? demoCodeForPlatform(platform.slug),
+        message: "Código temporal encontrado",
+      };
+    }
+    return notFound;
+  }
+
+  let live;
+  try {
+    live = await readFilteredAccessCode(mailbox, policy, platform);
+  } catch {
+    return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
+  }
+  if (live.status === "not_connected") {
+    return blocked("DENIED", "El buzón aún no está conectado. Conéctalo en Mi Bot con Google o Microsoft.");
+  }
+  if (live.status === "reconnect") {
+    return blocked("DENIED", "El buzón necesita reconectarse en Mi Bot.");
+  }
+  if (live.status === "error") {
+    return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
+  }
+  if (live.status === "not_found") return notFound;
+
+  return {
+    type: live.type,
+    status: "FOUND",
+    code: live.code,
+    message: "Código temporal encontrado",
+  };
+}

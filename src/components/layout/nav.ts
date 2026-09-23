@@ -12,6 +12,7 @@ import {
   ReceiptIcon,
   ReportIcon,
   SalesIcon,
+  SearchIcon,
   SettingsIcon,
   ShoppingBagIcon,
   SupportIcon,
@@ -27,7 +28,7 @@ export type NavItem = {
 };
 
 export const sellerPrimaryNav: NavItem[] = [
-  { href: "/panel", label: "Inicio", icon: HomeIcon },
+  { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/productos", label: "Tienda", icon: ShoppingBagIcon },
   { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
   { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
@@ -35,7 +36,7 @@ export const sellerPrimaryNav: NavItem[] = [
 ];
 
 export const sellerNav: NavItem[] = [
-  { href: "/panel", label: "Inicio", icon: HomeIcon },
+  { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
   { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
   { href: "/panel/servicios", label: "Servicios", icon: PlatformsIcon },
@@ -46,7 +47,7 @@ export const sellerNav: NavItem[] = [
   { href: "/panel/ventas", label: "Ventas", icon: SalesIcon },
   { href: "/panel/finanzas", label: "Finanzas", icon: FinanceIcon },
   { href: "/panel/comprobantes", label: "Comprobantes", icon: ReceiptIcon },
-  { href: "/panel/correos", label: "Centro de códigos", icon: MailIcon },
+  { href: "/panel/correos", label: "Mi Bot", icon: MailIcon },
   { href: "/panel/acceso", label: "Centro de acceso", icon: KeyIcon },
   { href: "/panel/soporte", label: "Soporte", icon: SupportIcon },
   { href: "/panel/usuarios-clientes", label: "Usuarios de clientes", icon: UsersIcon },

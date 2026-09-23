@@ -19,6 +19,7 @@ import { writeSupplierProductImage } from "@/lib/supplier-product-upload";
 import { DEFAULT_SUPPORT_HOURS, type CustomerStatus, type SellerStatus } from "@/lib/types";
 import { parsePricingToken, wholesalePricing, withPricingToken, withSortToken, nextWholesaleSortOrder } from "@/lib/wholesale";
 import { canonicalPlatformName } from "@/lib/platform-logos";
+import { copySellerVisualTemplate } from "@/lib/seller-visual-template";
 
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg"]);
 const ALLOWED_LOGO_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
@@ -255,16 +256,19 @@ export async function upsertSellerAction(formData: FormData) {
   profileId = access.profileId;
 
   const row = profileId ? { ...payload, profile_id: profileId } : payload;
-  const query = id
-    ? supabase.from("sellers").update(row).eq("id", id)
-    : supabase.from("sellers").insert(row);
-  const { error } = await query;
-  if (error) {
-    if (!id && profileId) {
-      const admin = createServiceClient();
-      await admin?.auth.admin.deleteUser(profileId);
+  if (id) {
+    const { error } = await supabase.from("sellers").update(row).eq("id", id);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { data: created, error } = await supabase.from("sellers").insert(row).select("id").maybeSingle();
+    if (error) {
+      if (profileId) {
+        const admin = createServiceClient();
+        await admin?.auth.admin.deleteUser(profileId);
+      }
+      return { ok: false, error: error.message };
     }
-    return { ok: false, error: error.message };
+    if (created?.id) await copySellerVisualTemplate(String(created.id));
   }
   revalidatePath("/admin/vendedores");
   return { ok: true };

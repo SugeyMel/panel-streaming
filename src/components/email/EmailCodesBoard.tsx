@@ -247,7 +247,7 @@ export function EmailCodesBoard({
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#2563EB]/15 text-[#38BDF8]">
               <MailIcon className="h-4 w-4" />
             </span>
-            Centro de códigos
+            {mode === "admin" ? "Centro de códigos" : "Mi Bot"}
           </h1>
           <p className="mt-0.5 hidden text-xs text-[#94A3B8] sm:block">
             Administra los correos usados para recibir códigos de tus plataformas.

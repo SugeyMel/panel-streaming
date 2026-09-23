@@ -34,7 +34,7 @@ const sellerMoreItems: {
   disabled?: boolean;
 }[] = [
   { label: "Inventario", href: "/panel/inventario" },
-  { label: "Centro de códigos", href: "/panel/correos" },
+  { label: "Mi Bot", href: "/panel/correos" },
   { label: "Medios de pago", href: "/panel/configuracion" },
   { label: "Finanzas", href: "/panel/finanzas" },
   { label: "Reportes", disabled: true, hint: "Sin sección propia aún" },

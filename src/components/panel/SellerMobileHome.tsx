@@ -82,7 +82,7 @@ const accessCards: AccessCard[] = [
   {
     slot: "correos",
     href: "/panel/correos",
-    title: "Centro de códigos",
+    title: "Mi Bot",
     description: "Conecta Gmail u Outlook para códigos de acceso",
     icon: MailIcon,
     tone: "text-[#22D3EE]",

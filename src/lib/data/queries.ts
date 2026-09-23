@@ -39,6 +39,7 @@ import {
 } from "@/lib/email-codes";
 import type { HomeImagesMap } from "@/lib/home-images";
 import { isHomeImageSlot } from "@/lib/home-images";
+import { ensureSellerVisualTemplate } from "@/lib/seller-visual-template";
 import type { PlantillasWhatsapp, TipoPlantillaMensaje } from "@/lib/whatsapp";
 
 export async function liveClient() {
@@ -740,6 +741,7 @@ export async function loadFinance(sellerId?: string | null) {
 export async function panelScope() {
   const session = await getAppSession();
   const sellerId = session.mode === "live" ? session.sellerId : DEMO_SELLER_ID;
+  if (session.mode === "live") await ensureSellerVisualTemplate(sellerId);
   return { session, sellerId };
 }
 
@@ -790,10 +792,15 @@ export async function loadStorefront(slug: string) {
   const { data, error } = await supabase.rpc("get_storefront", { p_seller_slug: slug });
   if (error) throw error;
   if (!data) return null;
-  const payload = data as {
+  let payload = data as {
     seller: Record<string, unknown>;
     products: Record<string, unknown>[];
   };
+  if (!payload.seller.storeBannerPath) {
+    await ensureSellerVisualTemplate(String(payload.seller.id));
+    const retry = await supabase.rpc("get_storefront", { p_seller_slug: slug });
+    if (!retry.error && retry.data) payload = retry.data as typeof payload;
+  }
   const seller = mapSeller({
     id: payload.seller.id,
     profile_id: "",

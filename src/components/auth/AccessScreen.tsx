@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signInAction } from "@/app/actions/business";
 import {
@@ -9,10 +9,8 @@ import {
   ChartBarsIcon,
   EyeIcon,
   EyeOffIcon,
-  HomeIcon,
   LockIcon,
   MailIcon,
-  SettingsIcon,
   ShieldIcon,
   UserIcon,
 } from "@/components/icons";
@@ -20,14 +18,6 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { tapFeedback } from "@/lib/tap-feedback";
 
 const LOGO = "/branding/logo-infinito-mark.png";
-
-type RoleTab = "customer" | "seller" | "admin";
-
-const ROLES: { id: RoleTab; label: string; icon: typeof UserIcon }[] = [
-  { id: "customer", label: "Cliente", icon: UserIcon },
-  { id: "seller", label: "Vendedor", icon: HomeIcon },
-  { id: "admin", label: "Administrador", icon: SettingsIcon },
-];
 
 function BrandTitle({ className = "" }: { className?: string }) {
   return (
@@ -103,7 +93,6 @@ function AppleMark() {
 }
 
 export function AccessScreen() {
-  const [role, setRole] = useState<RoleTab>("customer");
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,11 +100,6 @@ export function AccessScreen() {
   const [pending, setPending] = useState(false);
   const next = useSearchParams().get("next");
   const live = isSupabaseConfigured();
-
-  const placeholder = useMemo(() => {
-    if (role === "customer") return "tu@email.com o 987654321";
-    return "tu@correo.com";
-  }, [role]);
 
   return (
     <main className="relative min-h-dvh overflow-x-hidden overflow-y-auto bg-[#050814] text-white">
@@ -221,32 +205,6 @@ export function AccessScreen() {
                 }}
               >
                 {next ? <input type="hidden" name="next" value={next} /> : null}
-                <input type="hidden" name="intendedRole" value={role} />
-
-                <div className="grid grid-cols-3 gap-1 rounded-2xl bg-[#070B14]/90 p-1">
-                  {ROLES.map((item) => {
-                    const Icon = item.icon;
-                    const active = role === item.id;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setRole(item.id);
-                          setError(null);
-                        }}
-                        className={`flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-semibold transition sm:min-h-12 sm:text-xs ${
-                          active
-                            ? "bg-gradient-to-r from-[#7C5CFF] to-[#3B82F6] text-white shadow-[0_8px_20px_rgba(99,102,241,0.35)]"
-                            : "text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
 
                 <label className="block">
                   <span className="mb-2 block text-sm text-slate-200">Correo o celular</span>
@@ -257,7 +215,7 @@ export function AccessScreen() {
                       name="identifier"
                       required
                       autoComplete="username"
-                      placeholder={placeholder}
+                      placeholder="tu@email.com o 987654321"
                       className="h-11 w-full rounded-xl border border-white/10 bg-[#070B14] pr-3 pl-10 text-sm text-white outline-none placeholder:text-slate-500 focus:border-violet-400/50 sm:h-12"
                     />
                   </span>
@@ -362,7 +320,7 @@ export function AccessScreen() {
 
               {!live ? (
                 <p className="mt-3 text-center text-[11px] text-slate-500">
-                  Modo demo: usa la pestaña de rol para entrar al panel correspondiente.
+                  Modo demo: usa un correo con “admin” para el panel de administrador, “cliente” o un celular para el de cliente, y cualquier otro para vendedor.
                 </p>
               ) : null}
             </div>
