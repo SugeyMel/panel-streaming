@@ -13,7 +13,10 @@ export type MailboxReadResult =
   | { status: "reconnect" }
   | { status: "error"; message: string };
 
-type GmailList = { messages?: { id: string }[]; error?: { message?: string } };
+/** Antigüedad máxima de un código para mostrarse (los de Netflix/HBO/Disney vencen en pocos minutos). */
+const CODE_MAX_AGE_MINUTES = 20;
+
+type GmailList ={ messages?: { id: string }[]; error?: { message?: string } };
 type GmailMessage = {
   snippet?: string;
   payload?: {
@@ -76,7 +79,9 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
   listUrl.searchParams.set("maxResults", "25");
   // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
   const safeRecipient = recipient?.replace(/[^a-z0-9@._+-]/gi, "");
-  listUrl.searchParams.set("q", safeRecipient ? `newer_than:2d to:${safeRecipient}` : "newer_than:2d");
+  // Solo mensajes recientes: un código de hace una hora ya no sirve y no debe mostrarse.
+  const afterEpoch = Math.floor((Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000) / 1000);
+  listUrl.searchParams.set("q", safeRecipient ? `after:${afterEpoch} to:${safeRecipient}` : `after:${afterEpoch}`);
   const listRes = await fetch(listUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
@@ -126,7 +131,7 @@ async function microsoftFullText(accessToken: string, id: string) {
 }
 
 async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
-  const since = Date.now() - 2 * 24 * 60 * 60 * 1000;
+  const since = Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000;
   const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
   url.searchParams.set("$top", "25");
   url.searchParams.set("$orderby", "receivedDateTime desc");
