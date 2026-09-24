@@ -9,7 +9,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { AlertsBell, SellerBell, type HeaderAlert, type SellerBellAlert } from "@/components/layout/SellerBell";
 import { CustomerUserMenu } from "@/components/layout/CustomerUserMenu";
 import { SellerUserMenu } from "@/components/layout/SellerUserMenu";
-import { adminNav, customerNav, sellerNav, sellerPrimaryNav } from "@/components/layout/nav";
+import { adminNav, customerNav, sellerDesktopNav, sellerNav } from "@/components/layout/nav";
 import { BellIcon, ChevronDownIcon, SearchIcon, WhatsAppIcon } from "@/components/icons";
 import { signOutAction } from "@/app/actions/business";
 import { DEFAULT_SUPPORT_HOURS } from "@/lib/types";
@@ -33,7 +33,6 @@ const sellerMoreItems: {
   hint?: string;
   disabled?: boolean;
 }[] = [
-  { label: "Mis cuentas", href: "/panel/cuentas" },
   { label: "Inventario", href: "/panel/inventario" },
   { label: "Mi Bot", href: "/panel/correos" },
   { label: "Medios de pago", href: "/panel/configuracion" },
@@ -97,7 +96,7 @@ export function DashboardShell({
       : "";
   const sellerMoreActive =
     sellerApp &&
-    !sellerPrimaryNav.some((item) =>
+    !sellerDesktopNav.some((item) =>
       item.href === home ? pathname === item.href : pathname.startsWith(item.href),
     );
   const adminFinanceActive = adminApp && pathname.startsWith("/admin/finanzas");
@@ -226,7 +225,7 @@ export function DashboardShell({
                 </span>
                 {sellerApp ? (
                   <nav className="hidden min-w-0 items-center gap-1 lg:flex">
-                    {sellerPrimaryNav.map((item) => {
+                    {sellerDesktopNav.map((item) => {
                       const active =
                         item.href === home ? pathname === item.href : pathname.startsWith(item.href);
                       return (

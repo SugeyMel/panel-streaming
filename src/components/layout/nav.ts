@@ -35,6 +35,16 @@ export const sellerPrimaryNav: NavItem[] = [
   { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
 ];
 
+/** Menú superior en computadora: igual que el principal, con "Mis cuentas" junto a Consultas. */
+export const sellerDesktopNav: NavItem[] = [
+  { href: "/panel", label: "Consultas", icon: SearchIcon },
+  { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
+  { href: "/panel/productos", label: "Tienda", icon: ShoppingBagIcon },
+  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
+  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
+];
+
 export const sellerNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
