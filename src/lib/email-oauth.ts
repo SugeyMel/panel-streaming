@@ -185,7 +185,7 @@ export async function saveOAuthTokens(input: {
   const expiresAt = new Date(Date.now() + Math.max(60, input.expiresIn - 60) * 1000).toISOString();
   const payload = {
     connected_email_id: input.connectedEmailId,
-    seller_id: input.sellerId,
+    seller_id: input.sellerId || null,
     provider: input.provider,
     oauth_email: input.oauthEmail,
     access_token: encryptSecret(input.accessToken),
@@ -196,7 +196,7 @@ export async function saveOAuthTokens(input: {
   };
   const { error } = await supabase.from("email_oauth_tokens").upsert(payload, { onConflict: "connected_email_id" });
   if (error) return { ok: false as const, error: error.message };
-  const { error: mailboxError } = await supabase
+  const mailboxUpdate = supabase
     .from("connected_emails")
     .update({
       status: "conectado",
@@ -204,8 +204,11 @@ export async function saveOAuthTokens(input: {
       last_sync_at: new Date().toISOString(),
       provider: input.provider,
     })
-    .eq("id", input.connectedEmailId)
-    .eq("seller_id", input.sellerId);
+    .eq("id", input.connectedEmailId);
+  // sellerId vacío = buzón general del administrador (sin vendedor).
+  const { error: mailboxError } = await (input.sellerId
+    ? mailboxUpdate.eq("seller_id", input.sellerId)
+    : mailboxUpdate.is("seller_id", null));
   if (mailboxError) return { ok: false as const, error: mailboxError.message };
   return { ok: true as const };
 }
@@ -223,7 +226,7 @@ export async function loadOAuthToken(connectedEmailId: string): Promise<StoredOA
   if (!isOAuthProvider(provider)) return null;
   return {
     connectedEmailId: String(data.connected_email_id),
-    sellerId: String(data.seller_id),
+    sellerId: data.seller_id ? String(data.seller_id) : "",
     provider,
     oauthEmail: String(data.oauth_email ?? ""),
     accessToken: decryptSecret(String(data.access_token ?? "")),
@@ -271,22 +274,20 @@ export async function getValidAccessToken(connectedEmailId: string) {
 export async function markMailboxReconnect(connectedEmailId: string, sellerId: string) {
   const supabase = db();
   if (!supabase) return;
-  await supabase
-    .from("connected_emails")
-    .update({ status: "requiere_reconexion" })
-    .eq("id", connectedEmailId)
-    .eq("seller_id", sellerId);
+  const query = supabase.from("connected_emails").update({ status: "requiere_reconexion" }).eq("id", connectedEmailId);
+  await (sellerId ? query.eq("seller_id", sellerId) : query.is("seller_id", null));
 }
 
 export async function deleteOAuthTokens(connectedEmailId: string, sellerId: string) {
   const supabase = db();
   if (!supabase) return { ok: false as const, error: "Sin cliente de base de datos." };
-  await supabase.from("email_oauth_tokens").delete().eq("connected_email_id", connectedEmailId).eq("seller_id", sellerId);
-  const { error } = await supabase
+  const tokens = supabase.from("email_oauth_tokens").delete().eq("connected_email_id", connectedEmailId);
+  await (sellerId ? tokens.eq("seller_id", sellerId) : tokens.is("seller_id", null));
+  const mailbox = supabase
     .from("connected_emails")
     .update({ status: "registrado", oauth_email: null, last_sync_at: null })
-    .eq("id", connectedEmailId)
-    .eq("seller_id", sellerId);
+    .eq("id", connectedEmailId);
+  const { error } = await (sellerId ? mailbox.eq("seller_id", sellerId) : mailbox.is("seller_id", null));
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }
@@ -294,11 +295,11 @@ export async function deleteOAuthTokens(connectedEmailId: string, sellerId: stri
 export async function touchMailboxSync(connectedEmailId: string, sellerId: string) {
   const supabase = db();
   if (!supabase) return;
-  await supabase
+  const query = supabase
     .from("connected_emails")
     .update({ last_sync_at: new Date().toISOString(), status: "conectado" })
-    .eq("id", connectedEmailId)
-    .eq("seller_id", sellerId);
+    .eq("id", connectedEmailId);
+  await (sellerId ? query.eq("seller_id", sellerId) : query.is("seller_id", null));
 }
 
 export { oauthRedirectUri };

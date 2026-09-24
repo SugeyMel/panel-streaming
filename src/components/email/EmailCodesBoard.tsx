@@ -327,7 +327,7 @@ export function EmailCodesBoard({
             <tbody>
               {emails.map((row) => (
                 <tr key={row.id} className="border-t border-[#1e293b]">
-                  <td className="px-2 py-1">{sellerNameById[row.sellerId] ?? "—"}</td>
+                  <td className="px-2 py-1">{row.sellerId ? (sellerNameById[row.sellerId] ?? "—") : "Todos (automático)"}</td>
                   <td className="px-2 py-1">{row.email}</td>
                   <td className="px-2 py-1">
                     <EmailStatusBadge status={row.status} />
@@ -585,8 +585,8 @@ export function EmailCodesBoard({
           }}
         >
           {mode === "admin" && !sellerId ? (
-            <select name="sellerId" required className="ui-field">
-              <option value="">Vendedor</option>
+            <select name="sellerId" className="ui-field">
+              <option value="">Todos mis vendedores (automático)</option>
               {sellers.map((seller) => (
                 <option key={seller.id} value={seller.id}>
                   {seller.businessName} ({seller.name})

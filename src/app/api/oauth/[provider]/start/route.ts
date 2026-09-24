@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
   const nonce = randomBytes(16).toString("hex");
   const state = signOAuthState({
     mailboxId: String(mailbox.id),
-    sellerId: String(mailbox.seller_id),
+    sellerId: mailbox.seller_id ? String(mailbox.seller_id) : "",
     provider,
     nonce,
     exp: String(Date.now() + 10 * 60 * 1000),

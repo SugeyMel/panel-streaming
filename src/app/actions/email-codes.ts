@@ -113,8 +113,11 @@ async function ownedSellerId(formData?: FormData) {
 export async function upsertConnectedEmailAction(formData: FormData) {
   const session = await getAppSession();
   requireRole(session, ["seller", "superadmin"]);
-  const sellerId = await ownedSellerId(formData);
-  if (!sellerId) return { ok: false as const, error: "Elige un vendedor." };
+  const requestedSeller = await ownedSellerId(formData);
+  const isAdminUser = session.role === "superadmin" || session.role === "support";
+  if (!requestedSeller && !isAdminUser) return { ok: false as const, error: "Elige un vendedor." };
+  // El administrador puede dejar el vendedor vacío: buzón general que sirve a todos sus vendedores.
+  const sellerId = requestedSeller ?? "";
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!email || !email.includes("@")) return { ok: false as const, error: "Escribe un correo válido." };
@@ -145,12 +148,11 @@ export async function upsertConnectedEmailAction(formData: FormData) {
   const supabase = db() ?? (await createClient());
   if (!supabase) return { ok: false as const, error: "Sin cliente de base de datos." };
 
-  const currentRes = await supabase
+  const currentQuery = supabase
     .from("connected_emails")
     .select("id, status, last_sync_at")
-    .eq("seller_id", sellerId)
-    .ilike("email", email)
-    .maybeSingle();
+    .ilike("email", email);
+  const currentRes = await (sellerId ? currentQuery.eq("seller_id", sellerId) : currentQuery.is("seller_id", null)).maybeSingle();
 
   if (currentRes.error) {
     if (missingEmailCodesSql(currentRes.error.message)) {
@@ -165,7 +167,7 @@ export async function upsertConnectedEmailAction(formData: FormData) {
 
   const current = currentRes.data;
   const payload: Record<string, unknown> = {
-    seller_id: sellerId,
+    seller_id: sellerId || null,
     email,
     provider: account.provider,
     codes_enabled: account.codesEnabled,
@@ -174,7 +176,7 @@ export async function upsertConnectedEmailAction(formData: FormData) {
   if (!current?.id) payload.status = "registrado";
 
   const query = current?.id
-    ? supabase.from("connected_emails").update(payload).eq("id", current.id).eq("seller_id", sellerId)
+    ? supabase.from("connected_emails").update(payload).eq("id", current.id)
     : supabase.from("connected_emails").insert(payload);
 
   const { error } = await query;

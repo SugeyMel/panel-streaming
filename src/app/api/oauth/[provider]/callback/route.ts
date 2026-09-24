@@ -67,12 +67,14 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
   const supabase = createServiceClient();
   if (!supabase) return finish(returnTo, "servidor");
 
-  const { data: mailbox } = await supabase
+  const mailboxQuery = supabase
     .from("connected_emails")
     .select("id, email, seller_id")
-    .eq("id", payload.mailboxId)
-    .eq("seller_id", payload.sellerId)
-    .maybeSingle();
+    .eq("id", payload.mailboxId);
+  const { data: mailbox } = await (payload.sellerId
+    ? mailboxQuery.eq("seller_id", payload.sellerId)
+    : mailboxQuery.is("seller_id", null)
+  ).maybeSingle();
   if (!mailbox) return finish(returnTo, "buzon");
 
   let oauthEmail = "";
