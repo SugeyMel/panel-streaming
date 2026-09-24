@@ -227,6 +227,11 @@ const LOGIN_SUBJECTS = [
   "codigo temporal",
   "one-time code",
   "otp",
+  // HBO Max: "Tu código de un solo uso"
+  "codigo de un solo uso",
+  "un solo uso",
+  "single-use code",
+  "one-time passcode",
 ];
 
 const VERIFICATION_SUBJECTS = [
