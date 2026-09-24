@@ -45,6 +45,15 @@ export const sellerDesktopNav: NavItem[] = [
   { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
 ];
 
+/** Barra inferior en celular (5 botones + Más): "Mis cuentas" junto a Consultas; Tienda queda en Más. */
+export const sellerMobileNav: NavItem[] = [
+  { href: "/panel", label: "Consultas", icon: SearchIcon },
+  { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
+  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
+  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
+];
+
 export const sellerNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },

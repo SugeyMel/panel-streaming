@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MenuIcon } from "@/components/icons";
-import { adminNav, customerNav, sellerPrimaryNav, type NavItem } from "@/components/layout/nav";
+import { adminNav, customerNav, sellerMobileNav, type NavItem } from "@/components/layout/nav";
 
 const adminPrimaryNav: NavItem[] = [adminNav[0], adminNav[1], adminNav[2]];
 
@@ -32,12 +32,12 @@ export function BottomNav({
     variant === "customer"
       ? [customerNav[0], customerNav[1], customerNav[3], customerNav[5]]
       : variant === "seller"
-        ? sellerPrimaryNav
+        ? sellerMobileNav
         : adminPrimaryNav;
 
   const sellerMoreActive =
     variant === "seller" &&
-    (moreOpen || !sellerPrimaryNav.some((item) => isActive(pathname, item.href, home)));
+    (moreOpen || !sellerMobileNav.some((item) => isActive(pathname, item.href, home)));
 
   const adminMoreActive =
     variant === "admin" &&
@@ -56,7 +56,7 @@ export function BottomNav({
       >
         {variant === "seller" ? (
           <>
-            {sellerPrimaryNav.map((item) => (
+            {sellerMobileNav.map((item) => (
               <Tab key={item.href} item={item} home={home} pathname={pathname} light={light} />
             ))}
             <MoreTab onMore={onMore} active={sellerMoreActive} light={light} />
