@@ -269,8 +269,43 @@ export async function loadStreamingAccounts(sellerId: string | null): Promise<St
       saleKind: String(row.sale_kind) === "full" ? "full" : "profiles",
       resellerName: String(row.reseller_name ?? ""),
       resellerWhatsapp: String(row.reseller_whatsapp ?? ""),
+      assignedByAdmin: Boolean(row.assigned_by_admin),
     };
   });
+}
+
+export type AdminAssignedAccount = {
+  id: string;
+  sellerId: string;
+  platformId: string;
+  email: string;
+  label: string;
+  expiresAt: string | null;
+  assignedAt: string | null;
+};
+
+/** Cuentas asignadas por el administrador (todas o de un vendedor). Solo para paneles admin. */
+export async function loadAdminAssignedAccounts(sellerId?: string): Promise<AdminAssignedAccount[]> {
+  if (!isSupabaseConfigured()) return [];
+  const session = await getAppSession();
+  if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) return [];
+  let query = createServiceClient()
+    .from("streaming_accounts")
+    .select("id, seller_id, platform_id, email, label, expires_at, assigned_at")
+    .eq("assigned_by_admin", true)
+    .order("assigned_at", { ascending: false });
+  if (sellerId) query = query.eq("seller_id", sellerId);
+  const { data, error } = await query;
+  if (error) return [];
+  return (data ?? []).map((row) => ({
+    id: String(row.id),
+    sellerId: String(row.seller_id),
+    platformId: String(row.platform_id),
+    email: String(row.email ?? ""),
+    label: String(row.label ?? ""),
+    expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
+    assignedAt: row.assigned_at ? String(row.assigned_at).slice(0, 10) : null,
+  }));
 }
 
 function emailTablesClient() {

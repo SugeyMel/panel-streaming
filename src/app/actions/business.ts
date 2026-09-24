@@ -134,6 +134,66 @@ export async function signInAction(formData: FormData) {
   redirect("/cliente");
 }
 
+/**
+ * Acceso de clientes y vendedores solo con correo o celular (sin clave).
+ * Las cuentas de administrador quedan excluidas: deben usar correo y clave.
+ * Crea la sesión desde el servidor con un enlace de un solo uso.
+ */
+export async function signInWithoutPasswordAction(formData: FormData) {
+  const identifier = String(formData.get("identifier") ?? "").trim();
+  if (!identifier) return { ok: false, error: "Ingresa tu correo o celular." };
+
+  if (!isSupabaseConfigured()) {
+    if (identifier.includes("admin")) {
+      return { ok: false, error: "Las cuentas de administrador entran con correo y clave." };
+    }
+    redirect(
+      identifier.includes("cliente") || identifier.includes("carlos") || isPhoneLogin(identifier)
+        ? "/cliente"
+        : "/panel",
+    );
+  }
+
+  const notFound = { ok: false, error: "No encontramos una cuenta con ese correo o celular." };
+  const admin = createServiceClient();
+  const supabase = await createClient();
+  if (!admin || !supabase) return { ok: false, error: "No se pudo iniciar sesión. Falta configuración del servidor." };
+
+  const email = toAuthEmail(identifier);
+  if (!email) return notFound;
+
+  // generateLink crearía la cuenta si no existe, así que primero comprobamos que exista.
+  let userId: string | null = null;
+  for (let page = 1; page <= 20 && !userId; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
+    if (error) return { ok: false, error: "No se pudo iniciar sesión. Inténtalo de nuevo." };
+    userId = data.users.find((user) => (user.email ?? "").toLowerCase() === email)?.id ?? null;
+    if (data.users.length < 1000) break;
+  }
+  if (!userId) return notFound;
+
+  const { data: profile } = await admin.from("profiles").select("role").eq("id", userId).maybeSingle();
+  const role = String(profile?.role ?? "customer");
+  if (role === "superadmin" || role === "support") {
+    return { ok: false, error: "Las cuentas de administrador entran con correo y clave (Acceso administrador)." };
+  }
+
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  const tokenHash = link?.properties?.hashed_token;
+  if (linkError || !tokenHash) return { ok: false, error: "No se pudo iniciar sesión. Inténtalo de nuevo." };
+
+  const { error: verifyError } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: "magiclink" });
+  if (verifyError) return { ok: false, error: "No se pudo iniciar sesión. Inténtalo de nuevo." };
+
+  const next = String(formData.get("next") ?? "");
+  const safeNext =
+    next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "";
+
+  if (role === "seller") redirect("/panel");
+  if (safeNext.startsWith("/cliente") || safeNext.startsWith("/tienda/")) redirect(safeNext);
+  redirect("/cliente");
+}
+
 export async function signOutAction() {
   const supabase = await createClient();
   if (supabase) await supabase.auth.signOut();
@@ -1534,6 +1594,52 @@ export async function upsertStreamingAccountAction(formData: FormData) {
   revalidatePath("/panel/clientes");
   revalidatePath("/panel/vendedores");
   revalidatePath("/panel/productos");
+  return { ok: true };
+}
+
+/** Administrador → vendedor: asigna una cuenta concreta a un vendedor. */
+export async function assignAccountToSellerAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["support"]);
+  const sellerId = String(formData.get("sellerId") ?? "");
+  const platformId = String(formData.get("platformId") ?? "");
+  const email = String(formData.get("email") ?? "").trim();
+  if (!sellerId || !platformId || !email) return { ok: false, error: "Completa vendedor, plataforma y correo." };
+  const admin = createServiceClient();
+  const { error } = await admin.from("streaming_accounts").insert({
+    seller_id: sellerId,
+    platform_id: platformId,
+    email,
+    password: String(formData.get("password") ?? "").trim(),
+    label: String(formData.get("label") ?? "").trim(),
+    max_profiles: Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 1))),
+    status: "available",
+    expires_at: String(formData.get("expiresAt") ?? "").trim() || null,
+    assigned_by_admin: true,
+    assigned_at: new Date().toISOString(),
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/cuentas");
+  revalidatePath("/panel/cuentas");
+  return { ok: true };
+}
+
+/** Administrador: quita una cuenta que había asignado. */
+export async function removeAssignedAccountAction(id: string) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["support"]);
+  const { error } = await createServiceClient()
+    .from("streaming_accounts")
+    .delete()
+    .eq("id", id)
+    .eq("assigned_by_admin", true);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/cuentas");
+  revalidatePath("/panel/cuentas");
   return { ok: true };
 }
 

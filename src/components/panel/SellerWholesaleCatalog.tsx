@@ -34,15 +34,20 @@ const featureIcons: Record<WholesaleFeatureKey, ComponentType<SVGProps<SVGSVGEle
 
 const purpleBtn =
   "inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#7C3AED] text-sm font-semibold text-white hover:bg-[#6D28D9] disabled:cursor-not-allowed disabled:opacity-50";
+const purpleBtnCompact =
+  "inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[#7C3AED] text-[11px] font-semibold text-white hover:bg-[#6D28D9] disabled:cursor-not-allowed disabled:opacity-50";
 
 export function SellerWholesaleCatalog({
   products,
   platforms,
   initialProductId,
+  compact = false,
 }: {
   products: WholesaleCatalogProduct[];
   platforms: Platform[];
   initialProductId?: string;
+  /** Tarjetas más pequeñas en cuadrícula de 3 columnas (pantalla Consultas). */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [openId, setOpenId] = useState<string | null>(initialProductId || null);
@@ -71,12 +76,19 @@ export function SellerWholesaleCatalog({
           Aún no hay productos mayoristas publicados.
         </p>
       ) : (
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2 @xl:grid-cols-3">
+        <div
+          className={
+            compact
+              ? "grid grid-cols-2 gap-2.5 @min-[420px]:grid-cols-3"
+              : "grid grid-cols-1 gap-3 @md:grid-cols-2 @xl:grid-cols-3"
+          }
+        >
           {products.map((product) => (
             <WholesalePreviewCard
               key={product.id}
               product={product}
               platform={platforms.find((item) => item.id === product.platformId) ?? null}
+              compact={compact}
               onDetails={() => {
                 setMessage(null);
                 setOpenId(product.id);
@@ -105,10 +117,12 @@ function WholesalePreviewCard({
   product,
   platform,
   onDetails,
+  compact = false,
 }: {
   product: WholesaleCatalogProduct;
   platform: Platform | null;
   onDetails: () => void;
+  compact?: boolean;
 }) {
   const pricing = wholesalePricing(product);
   const copy = wholesaleCatalogCopy(product.offerKind, product.description);
@@ -117,37 +131,53 @@ function WholesalePreviewCard({
   return (
     <article className="flex flex-col overflow-hidden rounded-2xl border border-[#253047] bg-[#0B111C]">
       <div className="relative">
-        <WholesaleCover imageUrl={product.imageUrl} platform={platform} name={product.name} className="h-36 @lg:h-40" />
-        <span className="absolute top-2.5 right-2.5 rounded-full bg-[#E50914] px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase">
+        <WholesaleCover
+          imageUrl={product.imageUrl}
+          platform={platform}
+          name={product.name}
+          className={compact ? "h-20" : "h-36 @lg:h-40"}
+        />
+        <span
+          className={`absolute rounded-full bg-[#E50914] font-bold tracking-wide text-white uppercase ${
+            compact ? "top-1.5 right-1.5 px-1.5 py-px text-[8px]" : "top-2.5 right-2.5 px-2.5 py-0.5 text-[10px]"
+          }`}
+        >
           {copy.badge}
         </span>
       </div>
-      <div className="flex flex-1 flex-col px-3.5 pt-3 pb-3.5">
-        <h2 className="text-[17px] leading-tight font-bold text-white">{product.name}</h2>
-        <p className="mt-0.5 text-[12px] leading-snug text-[#94A3B8]">{copy.subtitle}</p>
-        <ul className="mt-3 space-y-1.5">
+      <div className={`flex flex-1 flex-col ${compact ? "px-2.5 pt-2 pb-2.5" : "px-3.5 pt-3 pb-3.5"}`}>
+        <h2 className={`leading-tight font-bold text-white ${compact ? "text-[13px]" : "text-[17px]"}`}>{product.name}</h2>
+        <p className={`mt-0.5 leading-snug text-[#94A3B8] ${compact ? "text-[10px]" : "text-[12px]"}`}>{copy.subtitle}</p>
+        <ul className={compact ? "mt-2 space-y-1" : "mt-3 space-y-1.5"}>
           {copy.features.map((item) => {
             const Icon = featureIcons[item.key];
             return (
-              <li key={item.key} className="flex items-center gap-2 text-[12px] text-[#E2E8F0]">
-                <Icon className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" />
+              <li
+                key={item.key}
+                className={`flex items-center text-[#E2E8F0] ${compact ? "gap-1.5 text-[10px]" : "gap-2 text-[12px]"}`}
+              >
+                <Icon className={`shrink-0 text-[#94A3B8] ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`} />
                 {item.label}
               </li>
             );
           })}
         </ul>
-        <div className="mt-auto pt-3">
-          <p className="text-[11px] text-[#94A3B8]">Desde</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <p className="text-[26px] leading-none font-bold text-white">{formatStorePrice(pricing.fromPrice)}</p>
+        <div className={`mt-auto ${compact ? "pt-2" : "pt-3"}`}>
+          <p className={`text-[#94A3B8] ${compact ? "text-[9px]" : "text-[11px]"}`}>Desde</p>
+          <div className={`mt-0.5 flex flex-wrap items-center ${compact ? "gap-1" : "gap-2"}`}>
+            <p className={`leading-none font-bold text-white ${compact ? "text-[18px]" : "text-[26px]"}`}>{formatStorePrice(pricing.fromPrice)}</p>
             {pricing.hasPackDeal ? (
-              <span className="rounded-lg bg-[#E50914] px-2 py-1 text-[10px] leading-tight font-semibold text-white">
+              <span
+                className={`rounded-lg bg-[#E50914] leading-tight font-semibold text-white ${
+                  compact ? "px-1.5 py-0.5 text-[8px]" : "px-2 py-1 text-[10px]"
+                }`}
+              >
                 Precio por unidad alquilando {pricing.bulkQty}
               </span>
             ) : null}
           </div>
-          {out ? <p className="mt-1 text-[11px] text-[#F87171]">Sin stock</p> : null}
-          <button type="button" className={`${purpleBtn} mt-3`} onClick={onDetails}>
+          {out ? <p className={`mt-1 text-[#F87171] ${compact ? "text-[9px]" : "text-[11px]"}`}>Sin stock</p> : null}
+          <button type="button" className={`${compact ? purpleBtnCompact : purpleBtn} ${compact ? "mt-2" : "mt-3"}`} onClick={onDetails}>
             Ver detalles
           </button>
         </div>

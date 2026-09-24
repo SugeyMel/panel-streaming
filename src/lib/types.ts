@@ -177,6 +177,8 @@ export type StreamingAccount = {
   saleKind: "profiles" | "full";
   resellerName: string;
   resellerWhatsapp: string;
+  /** true cuando el administrador asignó la cuenta a este vendedor. */
+  assignedByAdmin?: boolean;
 };
 
 export type Plan = {

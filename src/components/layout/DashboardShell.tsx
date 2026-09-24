@@ -33,6 +33,7 @@ const sellerMoreItems: {
   hint?: string;
   disabled?: boolean;
 }[] = [
+  { label: "Mis cuentas", href: "/panel/cuentas" },
   { label: "Inventario", href: "/panel/inventario" },
   { label: "Mi Bot", href: "/panel/correos" },
   { label: "Medios de pago", href: "/panel/configuracion" },

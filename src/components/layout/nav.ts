@@ -37,6 +37,7 @@ export const sellerPrimaryNav: NavItem[] = [
 
 export const sellerNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
+  { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
   { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
   { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
   { href: "/panel/servicios", label: "Servicios", icon: PlatformsIcon },
@@ -62,6 +63,7 @@ export const adminNav: NavItem[] = [
   { href: "/admin/ventas", label: "Ventas", icon: SalesIcon },
   { href: "/admin/mayorista", label: "Mayorista", icon: InventoryIcon },
   { href: "/admin/inventario", label: "Inventario", icon: InventoryIcon },
+  { href: "/admin/cuentas", label: "Cuentas asignadas", icon: PlatformsIcon },
   { href: "/admin/correos", label: "Centro de códigos", icon: MailIcon },
   { href: "/admin/solicitudes", label: "Solicitudes", icon: SupportIcon },
   { href: "/admin/reportes", label: "Reportes", icon: ReportIcon },

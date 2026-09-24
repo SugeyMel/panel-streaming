@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { signInAction } from "@/app/actions/business";
+import { signInAction, signInWithoutPasswordAction } from "@/app/actions/business";
 import {
   ArrowRightIcon,
   BoltIcon,
@@ -93,6 +93,7 @@ function AppleMark() {
 }
 
 export function AccessScreen() {
+  const [adminMode, setAdminMode] = useState(false);
   const [remember, setRemember] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -197,7 +198,9 @@ export function AccessScreen() {
                   setPending(true);
                   setError(null);
                   setHint(null);
-                  const result = await signInAction(formData);
+                  const result = adminMode
+                    ? await signInAction(formData)
+                    : await signInWithoutPasswordAction(formData);
                   if (result && "error" in result && result.error) {
                     setError(result.error);
                     setPending(false);
@@ -221,49 +224,57 @@ export function AccessScreen() {
                   </span>
                 </label>
 
-                <label className="block">
-                  <span className="mb-2 block text-sm text-slate-200">Contraseña</span>
-                  <span className="relative block">
-                    <LockIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      required
-                      autoComplete="current-password"
-                      placeholder="Ingresa tu contraseña"
-                      className="h-11 w-full rounded-xl border border-white/10 bg-[#070B14] pr-11 pl-10 text-sm text-white outline-none placeholder:text-slate-500 focus:border-violet-400/50 sm:h-12"
-                    />
-                    <button
-                      type="button"
-                      className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                      onClick={() => setShowPassword((value) => !value)}
-                      aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-                    >
-                      {showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
-                    </button>
-                  </span>
-                </label>
+                {adminMode ? (
+                  <>
+                    <label className="block">
+                      <span className="mb-2 block text-sm text-slate-200">Contraseña</span>
+                      <span className="relative block">
+                        <LockIcon className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                        <input
+                          type={showPassword ? "text" : "password"}
+                          name="password"
+                          required
+                          autoComplete="current-password"
+                          placeholder="Ingresa tu contraseña"
+                          className="h-11 w-full rounded-xl border border-white/10 bg-[#070B14] pr-11 pl-10 text-sm text-white outline-none placeholder:text-slate-500 focus:border-violet-400/50 sm:h-12"
+                        />
+                        <button
+                          type="button"
+                          className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                          onClick={() => setShowPassword((value) => !value)}
+                          aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                        >
+                          {showPassword ? <EyeOffIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                        </button>
+                      </span>
+                    </label>
 
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <label className="flex items-center gap-2 text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={remember}
-                      onChange={(event) => setRemember(event.target.checked)}
-                      className="h-4 w-4 rounded border-white/20 bg-transparent accent-[#7C5CFF]"
-                    />
-                    Recordarme
-                  </label>
-                  <button
-                    type="button"
-                    className="text-sky-300 hover:text-sky-200"
-                    onClick={() =>
-                      setHint("Pide a tu vendedor o al administrador que restablezca tu clave.")
-                    }
-                  >
-                    ¿Olvidaste tu contraseña?
-                  </button>
-                </div>
+                    <div className="flex items-center justify-between gap-3 text-sm">
+                      <label className="flex items-center gap-2 text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={remember}
+                          onChange={(event) => setRemember(event.target.checked)}
+                          className="h-4 w-4 rounded border-white/20 bg-transparent accent-[#7C5CFF]"
+                        />
+                        Recordarme
+                      </label>
+                      <button
+                        type="button"
+                        className="text-sky-300 hover:text-sky-200"
+                        onClick={() =>
+                          setHint("Pide a tu vendedor o al administrador que restablezca tu clave.")
+                        }
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-center text-xs text-slate-400">
+                    Escribe solo tu correo o celular, sin clave.
+                  </p>
+                )}
 
                 {error ? <p className="text-sm text-rose-300">{error}</p> : null}
                 {hint ? <p className="text-sm text-sky-200">{hint}</p> : null}
@@ -278,10 +289,28 @@ export function AccessScreen() {
                   className={`btn-press flex h-11 w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#A855F7] via-[#6366F1] to-[#22D3EE] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(99,102,241,0.35)] hover:brightness-110 disabled:opacity-70 sm:h-12 ${pending ? "is-busy" : ""}`}
                 >
                   {pending ? <span className="btn-spinner" aria-hidden="true" /> : null}
-                  {pending ? "Ingresando..." : "Iniciar sesión"}
+                  {pending ? "Ingresando..." : adminMode ? "Iniciar sesión" : "Ingresar"}
                   {pending ? null : <ArrowRightIcon className="h-4 w-4" />}
                 </button>
               </form>
+
+              <div className="mt-4 text-center sm:mt-5">
+                <p className="text-xs text-slate-400">
+                  {adminMode ? "¿Eres cliente o vendedor?" : "¿Tienes acceso administrativo?"}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminMode((value) => !value);
+                    setError(null);
+                    setHint(null);
+                  }}
+                  className="btn-press mt-2 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#070B14] px-5 text-sm font-semibold text-white hover:bg-white/5"
+                >
+                  <UserIcon className="h-4 w-4" />
+                  {adminMode ? "Ingresar sin clave" : "Acceso administrador"}
+                </button>
+              </div>
 
               <div className="mt-4 flex items-center gap-3 text-[11px] tracking-[0.18em] text-slate-500 uppercase sm:mt-5">
                 <span className="h-px flex-1 bg-white/10" />

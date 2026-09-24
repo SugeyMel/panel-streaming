@@ -7,9 +7,22 @@ import { PlatformLogo } from "@/components/ui/PlatformLogo";
 import { platformDisplayName } from "@/lib/platform-logos";
 import type { EmailLookupResult, Platform } from "@/lib/types";
 
-export function SellerCodeLookup({ platforms }: { platforms: Platform[] }) {
-  const [platformId, setPlatformId] = useState<string>(platforms[0]?.id ?? "");
-  const [email, setEmail] = useState("");
+export function SellerCodeLookup({
+  platforms,
+  initialPlatformId,
+  initialEmail,
+}: {
+  platforms: Platform[];
+  /** Precarga que llega desde "Mis cuentas" > "Consultar mensajes". */
+  initialPlatformId?: string;
+  initialEmail?: string;
+}) {
+  const [platformId, setPlatformId] = useState<string>(
+    initialPlatformId && platforms.some((item) => item.id === initialPlatformId)
+      ? initialPlatformId
+      : (platforms[0]?.id ?? ""),
+  );
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<EmailLookupResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -79,7 +92,7 @@ export function SellerCodeLookup({ platforms }: { platforms: Platform[] }) {
                     type="button"
                     onClick={() => setPlatformId(platform.id)}
                     aria-pressed={active}
-                    className={`relative flex min-h-[84px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2 text-center text-[11px] font-semibold transition ${
+                    className={`relative flex min-h-[84px] lg:min-h-[104px] flex-col items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2 text-center text-[11px] font-semibold transition ${
                       active
                         ? "border-[#38BDF8] bg-[#111827] text-white shadow-[0_0_0_1px_rgba(56,189,248,0.4)]"
                         : "border-[#253047] bg-[#0F172A] text-[#CBD5E1] hover:border-[#42516D]"
@@ -90,7 +103,7 @@ export function SellerCodeLookup({ platforms }: { platforms: Platform[] }) {
                         <CheckIcon className="h-3 w-3" />
                       </span>
                     ) : null}
-                    <PlatformLogo platform={platform} size={36} />
+                    <PlatformLogo platform={platform} size={40} />
                     <span className="line-clamp-1 w-full">{platformDisplayName(platform)}</span>
                   </button>
                 );
