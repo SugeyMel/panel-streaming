@@ -68,6 +68,7 @@ export function mapSeller(row: Record<string, unknown>): Seller {
   return {
     id: String(row.id),
     userId: String(row.profile_id ?? ""),
+    canCreateCustomers: row.can_create_customers !== false,
     name: String(row.name),
     businessName: String(row.business_name ?? row.businessName ?? ""),
     slug: String(row.slug),

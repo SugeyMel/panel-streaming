@@ -260,6 +260,17 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
             <option value="suspendido">Suspendido</option>
             <option value="desactivado">Desactivado</option>
           </select>
+          <label className="block space-y-1">
+            <span className="text-sm text-[#94A3B8]">Crear clientes</span>
+            <select
+              name="canCreateCustomers"
+              defaultValue={editing?.canCreateCustomers === false ? "off" : "on"}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+            >
+              <option value="on">Activado: puede crear clientes</option>
+              <option value="off">Desactivado: debe contactarte por WhatsApp</option>
+            </select>
+          </label>
           <p className="text-xs text-[#94A3B8]">
             El vendedor entra en Login → pestaña Vendedor, con este correo y esta clave.
           </p>

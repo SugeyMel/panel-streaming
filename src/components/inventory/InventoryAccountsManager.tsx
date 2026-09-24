@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { DEFAULT_ADMIN_WHATSAPP, adminWhatsappDisplay, adminWhatsappLink } from "@/lib/admin-contact";
 import {
   deleteStreamingAccountAction,
   patchInventoryServiceAction,
@@ -70,12 +71,16 @@ export function InventoryAccountsManager({
   products,
   offerLinks = [],
   plantillas = {},
+  canCreateCustomers = true,
+  adminWhatsapp = DEFAULT_ADMIN_WHATSAPP,
 }: {
   accounts: StreamingAccount[];
+  adminWhatsapp?: string;
   platforms: Platform[];
   services: Subscription[];
   customers: Customer[];
   products: Product[];
+  canCreateCustomers?: boolean;
   offerLinks?: StoreOfferLink[];
   plantillas?: PlantillasWhatsapp;
 }) {
@@ -657,6 +662,8 @@ export function InventoryAccountsManager({
           slot={assign.slot}
           customers={customers}
           products={products.filter((item) => item.platformId === assign.row.account.platformId && item.active)}
+          canCreateCustomers={canCreateCustomers}
+          adminWhatsapp={adminWhatsapp}
           onClose={() => setAssign(null)}
           onMessage={setMessage}
         />
@@ -1206,6 +1213,8 @@ export function AssignModal({
   slot,
   customers,
   products,
+  canCreateCustomers = true,
+  adminWhatsapp = DEFAULT_ADMIN_WHATSAPP,
   onClose,
   onMessage,
 }: {
@@ -1213,6 +1222,8 @@ export function AssignModal({
   slot: number;
   customers: Customer[];
   products: Product[];
+  canCreateCustomers?: boolean;
+  adminWhatsapp?: string;
   onClose: () => void;
   onMessage: (value: string | null) => void;
 }) {
@@ -1267,10 +1278,38 @@ export function AssignModal({
           <button type="button" className={!createNew ? "text-[#38BDF8]" : "text-[#94A3B8]"} onClick={() => setCreateNew(false)}>
             Buscar existente
           </button>
-          <button type="button" className={createNew ? "text-[#38BDF8]" : "text-[#94A3B8]"} onClick={() => setCreateNew(true)}>
+          <button
+            type="button"
+            disabled={!canCreateCustomers}
+            className={
+              !canCreateCustomers
+                ? "cursor-not-allowed text-[#64748B] line-through"
+                : createNew
+                  ? "text-[#38BDF8]"
+                  : "text-[#94A3B8]"
+            }
+            onClick={() => setCreateNew(true)}
+          >
             + Crear
           </button>
         </div>
+        {!canCreateCustomers ? (
+          <div className="space-y-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+            <p>
+              Crear clientes está desactivado en tu cuenta. Para activarlo, escribe al administrador por WhatsApp:{" "}
+              {adminWhatsappDisplay(adminWhatsapp)}
+            </p>
+            <a
+              href={adminWhatsappLink(adminWhatsapp, "Hola, quiero activar la opción de crear clientes en mi panel.")}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#22C55E] px-3 text-xs font-semibold text-white hover:brightness-110"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+              Contactar por WhatsApp
+            </a>
+          </div>
+        ) : null}
         {createNew ? (
           <>
             <input name="name" placeholder="Nombre" className="ui-field" required />

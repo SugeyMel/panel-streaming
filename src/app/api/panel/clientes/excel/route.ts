@@ -3,6 +3,8 @@ import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { customersToExcelTable, parseClientesTable } from "@/lib/clientes-excel";
 import { uiCustomerStatusToDb } from "@/lib/db/map";
 import { loadCustomerRows } from "@/lib/data/queries";
+import { customersDisabledMessage } from "@/lib/admin-contact";
+import { loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient } from "@/lib/supabase/server";
 
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
 
   const supabase = await createClient();
   if (!supabase || !session.sellerId) return jsonError("Vendedor no encontrado.");
+  if (!(await sellerCanCreateCustomers(session.sellerId))) return jsonError(customersDisabledMessage(await loadAdminWhatsapp()));
 
   const formData = await request.formData();
   const raw = formData.get("file");

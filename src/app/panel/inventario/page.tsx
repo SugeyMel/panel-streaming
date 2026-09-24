@@ -9,9 +9,12 @@ import {
   loadMessageTemplates,
   panelScope,
 } from "@/lib/data/queries";
+import { loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
 
 export default async function SellerInventoryPage() {
   const { sellerId } = await panelScope();
+  const canCreateCustomers = await sellerCanCreateCustomers(sellerId);
+  const adminWhatsapp = await loadAdminWhatsapp();
   const [products, platforms, accounts, services, customers, plantillas, offerLinks] = await Promise.all([
     loadProducts(sellerId),
     loadPlatforms(),
@@ -29,6 +32,8 @@ export default async function SellerInventoryPage() {
       customers={customers}
       products={products}
       plantillas={plantillas}
+      canCreateCustomers={canCreateCustomers}
+      adminWhatsapp={adminWhatsapp}
       offerLinks={offerLinks}
     />
   );

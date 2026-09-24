@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { isPhoneLogin, normalizePhone, phoneToAuthEmail, toAuthEmail } from "@/lib/auth/phone-login";
 import { whatsappParaGuardar } from "@/lib/clientes";
+import { customersDisabledMessage, normalizeAdminWhatsapp } from "@/lib/admin-contact";
+import { loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
 import { isHomeImageSlot } from "@/lib/home-images";
 import {
   MAX_CUERPO_WHATSAPP,
@@ -281,6 +283,7 @@ export async function upsertSellerAction(formData: FormData) {
     email: String(formData.get("email") ?? "").trim().toLowerCase(),
     whatsapp: whatsappParaGuardar(String(formData.get("whatsapp") ?? "")),
     status: uiSellerStatusToDb(String(formData.get("status") ?? "pendiente") as SellerStatus),
+    can_create_customers: String(formData.get("canCreateCustomers") ?? "on") !== "off",
     yape_holder: String(formData.get("yapeHolder") ?? ""),
     yape_number: String(formData.get("yapeNumber") ?? ""),
     plin_holder: String(formData.get("plinHolder") ?? ""),
@@ -529,6 +532,9 @@ export async function upsertCustomerAction(formData: FormData) {
   };
   if (!payload.name) return { ok: false, error: "Nombre y celular son obligatorios." };
   if (!payload.whatsapp) return { ok: false, error: "El WhatsApp debe tener 9 dígitos" };
+  if (!id && !(await sellerCanCreateCustomers(session.sellerId))) {
+    return { ok: false, error: customersDisabledMessage(await loadAdminWhatsapp()) };
+  }
   if (id) {
     const { data: existing } = await supabase.from("customers").select("seller_id").eq("id", id).maybeSingle();
     if (!existing || existing.seller_id !== session.sellerId) return { ok: false, error: "No autorizado." };
@@ -1656,6 +1662,25 @@ export async function assignAccountToSellerAction(formData: FormData) {
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
   return { ok: true, count: pairs.length };
+}
+
+/** Administrador: guarda el WhatsApp de contacto que ven los vendedores. */
+export async function saveAdminWhatsappAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["support"]);
+  const digits = normalizeAdminWhatsapp(String(formData.get("whatsapp") ?? ""));
+  if (!digits) return { ok: false, error: "Escribe un número válido, por ejemplo +51 931330910." };
+  const admin = createServiceClient();
+  if (!admin) return { ok: false, error: "Servicio no disponible." };
+  const { error } = await admin
+    .from("app_settings")
+    .upsert({ key: "admin_whatsapp", value: digits, updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/configuracion");
+  revalidatePath("/panel", "layout");
+  return { ok: true };
 }
 
 /** Administrador: quita una cuenta que había asignado. */

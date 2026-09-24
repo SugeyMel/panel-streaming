@@ -86,6 +86,8 @@ export type Seller = {
   whatsapp: string;
   supportHours: string;
   status: SellerStatus;
+  /** false = el administrador desactivó la creación de clientes para este vendedor. */
+  canCreateCustomers?: boolean;
   registeredAt: string;
   yapeHolder: string;
   yapeNumber: string;
