@@ -248,13 +248,13 @@ export function SellerAccountsBoard({
                   </span>
                 ),
               },
-              { key: "expiry", header: "Vencimiento", render: ({ account }) => {renderExpiry(account)} },
-              { key: "status", header: "Estado", render: ({ account }) => {renderStatus(account)} },
+              { key: "expiry", header: "Vencimiento", render: ({ account }) => renderExpiry(account) },
+              { key: "status", header: "Estado", render: ({ account }) => renderStatus(account) },
               {
                 key: "actions",
                 header: "Acciones",
                 className: "text-right",
-                render: ({ account }) => {renderActions(account)},
+                render: ({ account }) => renderActions(account),
               },
             ]}
             mobileRender={({ account }) => (

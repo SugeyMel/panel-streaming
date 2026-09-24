@@ -1608,6 +1608,7 @@ export async function assignAccountToSellerAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   if (!sellerId || !platformId || !email) return { ok: false, error: "Completa vendedor, plataforma y correo." };
   const admin = createServiceClient();
+  if (!admin) return { ok: false, error: "Servicio no disponible." };
   const { error } = await admin.from("streaming_accounts").insert({
     seller_id: sellerId,
     platform_id: platformId,
@@ -1632,7 +1633,9 @@ export async function removeAssignedAccountAction(id: string) {
   if (blocked) return blocked;
   const session = await getAppSession();
   requireRole(session, ["support"]);
-  const { error } = await createServiceClient()
+  const admin = createServiceClient();
+  if (!admin) return { ok: false, error: "Servicio no disponible." };
+  const { error } = await admin
     .from("streaming_accounts")
     .delete()
     .eq("id", id)

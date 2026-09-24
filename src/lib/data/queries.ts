@@ -289,7 +289,9 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
   if (!isSupabaseConfigured()) return [];
   const session = await getAppSession();
   if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) return [];
-  let query = createServiceClient()
+  const admin = createServiceClient();
+  if (!admin) return [];
+  let query = admin
     .from("streaming_accounts")
     .select("id, seller_id, platform_id, email, label, expires_at, assigned_at")
     .eq("assigned_by_admin", true)
