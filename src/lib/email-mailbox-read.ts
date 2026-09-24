@@ -30,6 +30,7 @@ type GraphList = {
     subject?: string;
     bodyPreview?: string;
     receivedDateTime?: string;
+    toRecipients?: { emailAddress?: { address?: string } }[];
   }[];
   error?: { message?: string };
 };
@@ -70,10 +71,12 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
   return { message: (await response.json()) as GmailMessage };
 }
 
-async function readGmail(accessToken: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("maxResults", "25");
-  listUrl.searchParams.set("q", "newer_than:2d");
+  // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
+  const safeRecipient = recipient?.replace(/[^a-z0-9@._+-]/gi, "");
+  listUrl.searchParams.set("q", safeRecipient ? `newer_than:2d to:${safeRecipient}` : "newer_than:2d");
   const listRes = await fetch(listUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
@@ -122,12 +125,12 @@ async function microsoftFullText(accessToken: string, id: string) {
   return { unauthorized: false as const, text: text.slice(0, 8000) };
 }
 
-async function readMicrosoft(accessToken: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
   const since = Date.now() - 2 * 24 * 60 * 60 * 1000;
   const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
   url.searchParams.set("$top", "25");
   url.searchParams.set("$orderby", "receivedDateTime desc");
-  url.searchParams.set("$select", "id,from,subject,bodyPreview,receivedDateTime");
+  url.searchParams.set("$select", "id,from,subject,bodyPreview,receivedDateTime,toRecipients");
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
@@ -137,6 +140,13 @@ async function readMicrosoft(accessToken: string): Promise<ClassifiableMessage[]
   if (!response.ok) return [];
   return (json.value ?? [])
     .filter((item) => {
+      if (recipient) {
+        const wanted = recipient.trim().toLowerCase();
+        const sentToWanted = (item.toRecipients ?? []).some(
+          (to) => (to.emailAddress?.address ?? "").trim().toLowerCase() === wanted,
+        );
+        if (!sentToWanted) return false;
+      }
       if (!item.receivedDateTime) return true;
       const received = Date.parse(item.receivedDateTime);
       return Number.isFinite(received) ? received >= since : true;
@@ -153,6 +163,7 @@ export async function readFilteredAccessCode(
   mailbox: { id: string; sellerId: string; status: string },
   policy: EmailCodeFilterPolicy,
   platform?: Pick<Platform, "slug" | "name"> | null,
+  recipient?: string,
 ): Promise<MailboxReadResult> {
   const access = await getValidAccessToken(mailbox.id);
   if (!access.ok) {
@@ -162,8 +173,8 @@ export async function readFilteredAccessCode(
 
   const raw =
     access.token.provider === "google"
-      ? await readGmail(access.token.accessToken)
-      : await readMicrosoft(access.token.accessToken);
+      ? await readGmail(access.token.accessToken, recipient)
+      : await readMicrosoft(access.token.accessToken, recipient);
 
   if (raw === "unauthorized") {
     await markMailboxReconnect(mailbox.id, mailbox.sellerId);

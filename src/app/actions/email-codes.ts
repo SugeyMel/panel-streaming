@@ -684,19 +684,34 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     return blocked("DENIED", "Selecciona una plataforma e ingresa el correo de la cuenta.");
   }
 
-  const [platforms, mailboxes] = await Promise.all([loadPlatforms(), loadConnectedEmails(sellerId)]);
+  const live = session.mode !== "demo";
+  // En modo real: solo cuentas que el administrador asignó a este vendedor; el buzón puede ser el del administrador.
+  const [platforms, mailboxes, ownAccounts] = await Promise.all([
+    loadPlatforms(),
+    loadConnectedEmails(live ? undefined : sellerId),
+    live ? loadStreamingAccounts(sellerId) : Promise.resolve([]),
+  ]);
   const platform = platforms.find((item) => item.id === platformId);
   if (!platform) return blocked("DENIED", "Esa plataforma no está disponible.");
+
+  if (live) {
+    const assigned = ownAccounts.some(
+      (item) => item.assignedByAdmin && item.email.trim().toLowerCase() === email.toLowerCase(),
+    );
+    if (!assigned) return blocked("DENIED", "Esta cuenta no está asignada a tu panel.");
+  }
 
   const mailbox = mailboxes.find(
     (item) =>
       item.codesEnabled &&
-      mailboxMatchesService(item.email, email) &&
+      (mailboxMatchesService(item.email, email) || mailboxMatchesService(item.email, baseMailboxEmail(email))) &&
       (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(platformId)),
   );
   if (!mailbox) {
-    return blocked("DENIED", "Ese correo no está habilitado en Mi Bot para códigos automáticos.");
+    return blocked("DENIED", "Esta cuenta aún no tiene un buzón de códigos enlazado. Avisa al administrador.");
   }
+  // Si el correo es una variante (ej. nombre+3@gmail.com) se busca el código enviado a esa dirección exacta.
+  const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
 
   const [globalFilter, sellerFilter] = await Promise.all([
     loadEmailFilterPolicy(null),
@@ -722,27 +737,38 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     return notFound;
   }
 
-  let live;
+  let result;
   try {
-    live = await readFilteredAccessCode(mailbox, policy, platform);
+    result = await readFilteredAccessCode(mailbox, policy, platform, recipient);
   } catch {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
-  if (live.status === "not_connected") {
-    return blocked("DENIED", "El buzón aún no está conectado. Conéctalo en Mi Bot con Google o Microsoft.");
+  if (result.status === "not_connected") {
+    return blocked("DENIED", "El buzón aún no está conectado. Avisa al administrador.");
   }
-  if (live.status === "reconnect") {
-    return blocked("DENIED", "El buzón necesita reconectarse en Mi Bot.");
+  if (result.status === "reconnect") {
+    return blocked("DENIED", "El buzón necesita reconectarse. Avisa al administrador.");
   }
-  if (live.status === "error") {
+  if (result.status === "error") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
-  if (live.status === "not_found") return notFound;
+  if (result.status === "not_found") return notFound;
 
   return {
-    type: live.type,
+    type: result.type,
     status: "FOUND",
-    code: live.code,
+    code: result.code,
     message: "Código temporal encontrado",
   };
+}
+
+/** nombre+3@gmail.com → nombre@gmail.com (solo Gmail/Outlook, donde el "+" llega al mismo buzón). */
+function baseMailboxEmail(email: string) {
+  const value = email.trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  if (at < 1) return value;
+  const domain = value.slice(at + 1);
+  if (!["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com"].includes(domain)) return value;
+  const local = value.slice(0, at).split("+")[0];
+  return `${local}@${domain}`;
 }
