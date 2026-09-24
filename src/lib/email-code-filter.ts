@@ -241,6 +241,10 @@ const VERIFICATION_SUBJECTS = [
   "confirma tu inicio",
   "security code",
   "codigo de seguridad",
+  // Netflix: "Este código vence en 15 minutos" / "Código de verificación: 804276"
+  "codigo vence en",
+  "codigo expira en",
+  "code expires in",
 ];
 
 const TRAVEL_SUBJECTS = [
@@ -403,7 +407,10 @@ export function classifyEmailMessage(
 
 export function extractAccessCode(text: string) {
   const match = /\b(\d{4,8})\b/.exec(text);
-  return match?.[1];
+  if (match) return match[1];
+  // Códigos escritos con espacios entre dígitos, ej. "8 0 4 2 7 6" (Netflix).
+  const spaced = /(?<!\d)(\d(?:[  ]\d){3,7})(?!\d)/.exec(text);
+  return spaced ? spaced[1].replace(/[  ]/g, "") : undefined;
 }
 
 export function demoCodeForPlatform(slug: string) {
