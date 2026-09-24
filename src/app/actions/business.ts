@@ -1605,28 +1605,57 @@ export async function assignAccountToSellerAction(formData: FormData) {
   requireRole(session, ["support"]);
   const sellerId = String(formData.get("sellerId") ?? "");
   const platformId = String(formData.get("platformId") ?? "");
-  const email = String(formData.get("email") ?? "").trim();
-  if (!sellerId || !platformId || !email) return { ok: false, error: "Completa vendedor, plataforma y correo." };
+  // Una cuenta (campos correo/clave) o varias (una por línea: "correo clave", "correo:clave" o "correo,clave").
+  const pairs: { email: string; password: string }[] = [];
+  const bulkText = String(formData.get("bulk") ?? "");
+  if (bulkText.trim()) {
+    for (const rawLine of bulkText.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const parts = line.split(/[\s,;|]+/).filter(Boolean);
+      let lineEmail = parts[0] ?? "";
+      let linePassword = parts.slice(1).join(" ");
+      if (parts.length === 1 && lineEmail.includes(":")) {
+        const at = lineEmail.indexOf(":");
+        linePassword = lineEmail.slice(at + 1);
+        lineEmail = lineEmail.slice(0, at);
+      }
+      if (lineEmail) pairs.push({ email: lineEmail, password: linePassword });
+    }
+  } else {
+    const single = String(formData.get("email") ?? "").trim();
+    if (single) pairs.push({ email: single, password: String(formData.get("password") ?? "").trim() });
+  }
+  if (!sellerId || !platformId || pairs.length === 0) {
+    return { ok: false, error: "Completa vendedor, plataforma y correo." };
+  }
+  if (pairs.length > 100) return { ok: false, error: "Máximo 100 cuentas por vez." };
   const saleKind = String(formData.get("saleKind") ?? "profiles") === "full" ? "full" : "profiles";
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
-  const { error } = await admin.from("streaming_accounts").insert({
-    seller_id: sellerId,
-    platform_id: platformId,
-    email,
-    password: String(formData.get("password") ?? "").trim(),
-    label: saleKind === "full" ? "" : String(formData.get("label") ?? "").trim(),
-    max_profiles: saleKind === "full" ? 1 : Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 5))),
-    sale_kind: saleKind,
-    status: "available",
-    expires_at: String(formData.get("expiresAt") ?? "").trim() || null,
-    assigned_by_admin: true,
-    assigned_at: new Date().toISOString(),
-  });
+  const now = new Date().toISOString();
+  const expiresAt = String(formData.get("expiresAt") ?? "").trim() || null;
+  const label = saleKind === "full" ? "" : String(formData.get("label") ?? "").trim();
+  const maxProfiles = saleKind === "full" ? 1 : Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 5)));
+  const { error } = await admin.from("streaming_accounts").insert(
+    pairs.map((pair) => ({
+      seller_id: sellerId,
+      platform_id: platformId,
+      email: pair.email,
+      password: pair.password,
+      label,
+      max_profiles: maxProfiles,
+      sale_kind: saleKind,
+      status: "available",
+      expires_at: expiresAt,
+      assigned_by_admin: true,
+      assigned_at: now,
+    })),
+  );
   if (error) return { ok: false, error: error.message };
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
-  return { ok: true };
+  return { ok: true, count: pairs.length };
 }
 
 /** Administrador: quita una cuenta que había asignado. */

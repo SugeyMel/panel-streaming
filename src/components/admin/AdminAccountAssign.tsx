@@ -23,6 +23,7 @@ export function AdminAccountAssign({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [bulk, setBulk] = useState(false);
   const [saleKind, setSaleKind] = useState<"full" | "profiles">("full");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -36,7 +37,8 @@ export function AdminAccountAssign({
       const result = await assignAccountToSellerAction(new FormData(form));
       if (result.ok) {
         form.reset();
-        setMessage({ ok: true, text: "Cuenta asignada al vendedor." });
+        const count = "count" in result && typeof result.count === "number" ? result.count : 1;
+        setMessage({ ok: true, text: count > 1 ? `${count} cuentas asignadas al vendedor.` : "Cuenta asignada al vendedor." });
         router.refresh();
       } else {
         setMessage({ ok: false, text: result.error ?? "No se pudo asignar." });
@@ -58,7 +60,19 @@ export function AdminAccountAssign({
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader title="Asignar cuenta a un vendedor" description="Aparecerá en “Mis cuentas” del vendedor." />
+        <CardHeader
+          title="Asignar cuenta a un vendedor"
+          description="Aparecerá en “Mis cuentas” del vendedor."
+          action={
+            <button
+              type="button"
+              onClick={() => setBulk((value) => !value)}
+              className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-violet-400/50"
+            >
+              {bulk ? "Asignar una sola" : "Asignar varias a la vez"}
+            </button>
+          }
+        />
         <form onSubmit={submit} className="grid gap-3 p-5 sm:grid-cols-2">
           <select name="sellerId" required className={inputClass} defaultValue="">
             <option value="" disabled>Vendedor</option>
@@ -72,8 +86,25 @@ export function AdminAccountAssign({
               <option key={platform.id} value={platform.id}>{platform.name}</option>
             ))}
           </select>
-          <input name="email" required placeholder="Correo / usuario de la cuenta" className={inputClass} />
-          <input name="password" placeholder="Clave de la cuenta" className={inputClass} />
+          {bulk ? (
+            <div className="sm:col-span-2">
+              <textarea
+                name="bulk"
+                required
+                rows={6}
+                placeholder={"Una cuenta por línea: correo y clave\ncorreo1@gmail.com clave1\ncorreo2@gmail.com clave2"}
+                className="w-full rounded-xl border border-[#253047] bg-[#070B14] px-3 py-3 font-mono text-sm text-white outline-none placeholder:text-[#64748B] focus:border-violet-400/50"
+              />
+              <p className="mt-1 text-xs text-[#94A3B8]">
+                Todas tendrán el mismo vendedor, plataforma, tipo y vencimiento. Puedes separar correo y clave con espacio, coma o “:”.
+              </p>
+            </div>
+          ) : (
+            <>
+              <input name="email" required placeholder="Correo / usuario de la cuenta" className={inputClass} />
+              <input name="password" placeholder="Clave de la cuenta" className={inputClass} />
+            </>
+          )}
           <select
             name="saleKind"
             value={saleKind}
