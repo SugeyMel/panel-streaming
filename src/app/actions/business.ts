@@ -1607,6 +1607,7 @@ export async function assignAccountToSellerAction(formData: FormData) {
   const platformId = String(formData.get("platformId") ?? "");
   const email = String(formData.get("email") ?? "").trim();
   if (!sellerId || !platformId || !email) return { ok: false, error: "Completa vendedor, plataforma y correo." };
+  const saleKind = String(formData.get("saleKind") ?? "profiles") === "full" ? "full" : "profiles";
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
   const { error } = await admin.from("streaming_accounts").insert({
@@ -1614,8 +1615,9 @@ export async function assignAccountToSellerAction(formData: FormData) {
     platform_id: platformId,
     email,
     password: String(formData.get("password") ?? "").trim(),
-    label: String(formData.get("label") ?? "").trim(),
-    max_profiles: Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 1))),
+    label: saleKind === "full" ? "" : String(formData.get("label") ?? "").trim(),
+    max_profiles: saleKind === "full" ? 1 : Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 5))),
+    sale_kind: saleKind,
     status: "available",
     expires_at: String(formData.get("expiresAt") ?? "").trim() || null,
     assigned_by_admin: true,

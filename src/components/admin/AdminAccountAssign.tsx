@@ -23,6 +23,7 @@ export function AdminAccountAssign({
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [saleKind, setSaleKind] = useState<"full" | "profiles">("full");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -73,7 +74,18 @@ export function AdminAccountAssign({
           </select>
           <input name="email" required placeholder="Correo / usuario de la cuenta" className={inputClass} />
           <input name="password" placeholder="Clave de la cuenta" className={inputClass} />
-          <input name="label" placeholder="Perfil / etiqueta (opcional)" className={inputClass} />
+          <select
+            name="saleKind"
+            value={saleKind}
+            onChange={(event) => setSaleKind(event.target.value === "full" ? "full" : "profiles")}
+            className={inputClass}
+          >
+            <option value="full">Cuenta completa</option>
+            <option value="profiles">Perfiles</option>
+          </select>
+          {saleKind === "profiles" ? (
+            <input name="label" placeholder="Nombre del perfil (opcional)" className={inputClass} />
+          ) : null}
           <input name="expiresAt" type="date" className={inputClass} />
           <div className="sm:col-span-2">
             <button
