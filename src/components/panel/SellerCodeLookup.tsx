@@ -7,6 +7,13 @@ import { PlatformLogo } from "@/components/ui/PlatformLogo";
 import { platformDisplayName } from "@/lib/platform-logos";
 import type { EmailLookupResult, Platform } from "@/lib/types";
 
+/** "hace 5 min" / "recién" a partir de la hora en que llegó el mensaje. */
+function codeAgeLabel(at: number) {
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
+  if (minutes < 1) return "recién llegado";
+  return `hace ${minutes} min`;
+}
+
 export function SellerCodeLookup({
   platforms,
   initialPlatformId,
@@ -26,6 +33,7 @@ export function SellerCodeLookup({
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<EmailLookupResult | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedHistory, setCopiedHistory] = useState<string | null>(null);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -51,6 +59,16 @@ export function SellerCodeLookup({
       await navigator.clipboard.writeText(code);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* sin portapapeles disponible */
+    }
+  }
+
+  async function copyHistoryCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedHistory(code);
+      window.setTimeout(() => setCopiedHistory(null), 1600);
     } catch {
       /* sin portapapeles disponible */
     }
@@ -164,6 +182,38 @@ export function SellerCodeLookup({
                 <CopyIcon className="h-4 w-4" />
                 {copied ? "Copiado" : "Copiar"}
               </button>
+            </div>
+          ) : null}
+          {result.status === "FOUND" && result.history && result.history.length > 1 ? (
+            <div className="mt-4 border-t border-emerald-500/20 pt-3">
+              <p className="text-xs font-semibold text-emerald-200/80">
+                Códigos de los últimos 30 minutos
+              </p>
+              <ul className="mt-2 space-y-1.5">
+                {result.history.map((item, index) => (
+                  <li
+                    key={`${item.code}-${index}`}
+                    className="flex items-center justify-between gap-3 rounded-lg bg-black/20 px-3 py-2"
+                  >
+                    <span className="flex items-baseline gap-2">
+                      <span className="text-lg font-bold tracking-[0.2em] text-white">{item.code}</span>
+                      <span className="text-[11px] text-[#94A3B8]">
+                        {index === 0 ? "más reciente" : ""}
+                        {index === 0 && item.at ? " · " : ""}
+                        {item.at ? codeAgeLabel(item.at) : ""}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyHistoryCode(item.code)}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#253047] bg-[#1B2436] px-2.5 text-[11px] font-semibold text-white"
+                    >
+                      <CopyIcon className="h-3.5 w-3.5" />
+                      {copiedHistory === item.code ? "Copiado" : "Copiar"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : null}
         </div>

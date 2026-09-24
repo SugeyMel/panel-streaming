@@ -372,6 +372,8 @@ export type EmailLookupResult = {
   type: EmailLookupType;
   status: "FOUND" | "NOT_FOUND" | "BLOCKED" | "DENIED" | "RATE_LIMITED";
   code?: string;
+  /** Códigos recientes (más nuevo primero), con la hora en que llegaron (ms). Incluye el código principal. */
+  history?: { code: string; at?: number }[];
   safeActionAvailable?: boolean;
   message: string;
 };

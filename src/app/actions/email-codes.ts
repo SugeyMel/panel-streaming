@@ -660,6 +660,7 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     type: live.type,
     status: "FOUND",
     code: live.code,
+    history: live.history,
     message: "Código temporal encontrado",
   };
 }
@@ -783,6 +784,7 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     type: result.type,
     status: "FOUND",
     code: result.code,
+    history: result.history,
     message: "Código temporal encontrado",
   };
 }

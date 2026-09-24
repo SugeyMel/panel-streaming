@@ -5,6 +5,8 @@ export type ClassifiableMessage = {
   subject: string;
   snippet?: string;
   id?: string;
+  /** Momento en que llegó el mensaje (ms desde 1970), si el proveedor lo entrega. */
+  receivedAt?: number;
 };
 
 export type MessageVerdict = {

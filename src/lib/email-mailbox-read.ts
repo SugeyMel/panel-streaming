@@ -7,18 +7,21 @@ import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/l
 import type { EmailCodeFilterPolicy, EmailLookupType, Platform } from "@/lib/types";
 
 export type MailboxReadResult =
-  | { status: "found"; type: EmailLookupType; code: string }
+  | { status: "found"; type: EmailLookupType; code: string; history: { code: string; at?: number }[] }
   | { status: "not_found" }
   | { status: "not_connected" }
   | { status: "reconnect" }
   | { status: "error"; message: string };
 
 /** Antigüedad máxima de un código para mostrarse (los de Netflix/HBO/Disney vencen en pocos minutos). */
-const CODE_MAX_AGE_MINUTES = 20;
+const CODE_MAX_AGE_MINUTES = 30;
+/** Cuántos códigos recientes se devuelven como máximo (historial). */
+const CODE_HISTORY_MAX = 5;
 
 type GmailList ={ messages?: { id: string }[]; error?: { message?: string } };
 type GmailMessage = {
   snippet?: string;
+  internalDate?: string;
   payload?: {
     mimeType?: string;
     headers?: { name?: string; value?: string }[];
@@ -102,6 +105,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
       subject: header(message.payload?.headers, "Subject"),
       snippet: message.snippet ?? "",
       id,
+      receivedAt: Number(message.internalDate) || undefined,
     });
   }
   return out;
@@ -161,6 +165,7 @@ async function readMicrosoft(accessToken: string, recipient?: string): Promise<C
       from: item.from?.emailAddress?.address || item.from?.emailAddress?.name || "",
       subject: item.subject ?? "",
       snippet: item.bodyPreview ?? "",
+      receivedAt: item.receivedDateTime ? Date.parse(item.receivedDateTime) || undefined : undefined,
     }));
 }
 
@@ -188,7 +193,11 @@ export async function readFilteredAccessCode(
 
   await touchMailboxSync(mailbox.id, mailbox.sellerId);
 
+  const history: { code: string; at?: number }[] = [];
+  let firstType: EmailLookupType | null = null;
+
   for (const message of raw) {
+    if (history.length >= CODE_HISTORY_MAX) break;
     const verdict = classifyEmailMessage(message, policy, platform);
     if (verdict.decision !== "allow") continue;
     let code = extractAccessCode(`${message.subject} ${message.snippet ?? ""}`);
@@ -205,8 +214,13 @@ export async function readFilteredAccessCode(
       code = extractAccessCode(full.text);
     }
     if (!code) continue;
-    return { status: "found", type: verdict.type, code };
+    if (history.some((item) => item.code === code)) continue;
+    if (!firstType) firstType = verdict.type;
+    history.push({ code, at: message.receivedAt });
   }
 
+  if (history.length > 0 && firstType) {
+    return { status: "found", type: firstType, code: history[0].code, history };
+  }
   return { status: "not_found" };
 }
