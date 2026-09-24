@@ -10,10 +10,12 @@ import { SearchBar } from "@/components/ui/SearchBar";
 import { HealthStatusBadge } from "@/components/ui/StatusBadge";
 import {
   colorDias,
+  cumpleEstado,
   diasDesdeVencimiento,
   estadoDesdeDias,
   FILAS_POR_PAGINA_DEFAULT,
   formatDdMmYyyy,
+  type EstadoFiltro,
   type FilasPorPagina,
 } from "@/lib/cuenta-salud";
 import { platformDisplayName } from "@/lib/platform-logos";
@@ -39,9 +41,11 @@ export function SellerAccountsBoard({
 }) {
   const [query, setQuery] = useState("");
   const [platformDraft, setPlatformDraft] = useState("all");
-  const [fromDraft, setFromDraft] = useState("");
-  const [toDraft, setToDraft] = useState("");
-  const [applied, setApplied] = useState({ platform: "all", from: "", to: "" });
+  const [statusDraft, setStatusDraft] = useState<EstadoFiltro>("all");
+  const [applied, setApplied] = useState<{ platform: string; status: EstadoFiltro }>({
+    platform: "all",
+    status: "all",
+  });
   const [pageSize, setPageSize] = useState<FilasPorPagina>(FILAS_POR_PAGINA_DEFAULT);
   const [page, setPage] = useState(1);
   const [copied, setCopied] = useState<string | null>(null);
@@ -56,8 +60,10 @@ export function SellerAccountsBoard({
     return accounts
       .filter((item) => {
         if (applied.platform !== "all" && item.platformId !== applied.platform) return false;
-        if (applied.from && (!item.expiresAt || item.expiresAt < applied.from)) return false;
-        if (applied.to && (!item.expiresAt || item.expiresAt > applied.to)) return false;
+        if (applied.status !== "all") {
+          if (item.status === "inactive" || !item.expiresAt) return false;
+          if (!cumpleEstado(diasDesdeVencimiento(item.expiresAt), applied.status)) return false;
+        }
         if (!needle) return true;
         const platform = platforms.find((p) => p.id === item.platformId);
         return [item.email, item.label, accountCode(item), platform ? platformDisplayName(platform) : ""]
@@ -164,7 +170,7 @@ export function SellerAccountsBoard({
             className="flex flex-wrap items-end gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              setApplied({ platform: platformDraft, from: fromDraft, to: toDraft });
+              setApplied({ platform: platformDraft, status: statusDraft });
               setPage(1);
             }}
           >
@@ -184,12 +190,17 @@ export function SellerAccountsBoard({
               </select>
             </label>
             <label className="block text-[10px] font-semibold tracking-wide text-[#94A3B8] uppercase">
-              Desde
-              <input type="date" value={fromDraft} onChange={(event) => setFromDraft(event.target.value)} className={`${FIELD} mt-1 block`} />
-            </label>
-            <label className="block text-[10px] font-semibold tracking-wide text-[#94A3B8] uppercase">
-              Hasta
-              <input type="date" value={toDraft} onChange={(event) => setToDraft(event.target.value)} className={`${FIELD} mt-1 block`} />
+              Estado
+              <select
+                value={statusDraft}
+                onChange={(event) => setStatusDraft(event.target.value as EstadoFiltro)}
+                className={`${FIELD} mt-1 block w-40`}
+              >
+                <option value="all">Todos</option>
+                <option value="activo">Activo</option>
+                <option value="por_vencer">Por vencer</option>
+                <option value="vencido">Vencido</option>
+              </select>
             </label>
             <button
               type="submit"
