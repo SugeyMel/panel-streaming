@@ -167,7 +167,7 @@ export function SellerAccountsBoard({
             </p>
           </div>
           <form
-            className="flex flex-wrap items-end gap-3"
+            className="grid grid-cols-2 items-end gap-3 sm:flex sm:flex-wrap"
             onSubmit={(event) => {
               event.preventDefault();
               setApplied({ platform: platformDraft, status: statusDraft });
@@ -179,7 +179,7 @@ export function SellerAccountsBoard({
               <select
                 value={platformDraft}
                 onChange={(event) => setPlatformDraft(event.target.value)}
-                className={`${FIELD} mt-1 block w-40`}
+                className={`${FIELD} mt-1 block h-11 w-full sm:h-10 sm:w-40`}
               >
                 <option value="all">Todas</option>
                 {platformOptions.map((item) => (
@@ -194,7 +194,7 @@ export function SellerAccountsBoard({
               <select
                 value={statusDraft}
                 onChange={(event) => setStatusDraft(event.target.value as EstadoFiltro)}
-                className={`${FIELD} mt-1 block w-40`}
+                className={`${FIELD} mt-1 block h-11 w-full sm:h-10 sm:w-40`}
               >
                 <option value="all">Todos</option>
                 <option value="activo">Activo</option>
@@ -204,7 +204,7 @@ export function SellerAccountsBoard({
             </label>
             <button
               type="submit"
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#2563EB] px-4 text-sm font-semibold text-white hover:brightness-110"
+              className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#7C3AED] to-[#2563EB] px-4 text-sm font-semibold text-white hover:brightness-110 sm:col-span-1 sm:h-10"
             >
               <FilterIcon className="h-4 w-4" />
               Filtrar
@@ -214,7 +214,7 @@ export function SellerAccountsBoard({
 
         <div className="mt-4">
           <SearchBar
-            className="w-full md:w-[320px]"
+            className="w-full md:w-[320px] max-md:[&_input]:h-12 max-md:[&_input]:text-base"
             value={query}
             onChange={(value) => {
               setQuery(value);
@@ -268,24 +268,67 @@ export function SellerAccountsBoard({
                 render: ({ account }) => renderActions(account),
               },
             ]}
-            mobileRender={({ account }) => (
-              <div className="space-y-2 rounded-xl border border-[#253047] bg-[#0F172A] p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <PlatformName
-                    platform={platforms.find((item) => item.id === account.platformId) ?? account.platformId}
-                    size={28}
-                    className="font-semibold"
-                  />
-                  {renderStatus(account)}
+            mobileRender={({ account }) => {
+              const dias = account.expiresAt ? diasDesdeVencimiento(account.expiresAt) : null;
+              return (
+                <div className="space-y-3 rounded-2xl border border-[#253047] bg-[#0F172A] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <PlatformName
+                      platform={platforms.find((item) => item.id === account.platformId) ?? account.platformId}
+                      size={44}
+                      className="text-base font-bold"
+                    />
+                    <span className="shrink-0 [&_*]:text-sm">{renderStatus(account)}</span>
+                  </div>
+                  <p className="text-base leading-snug font-medium break-all text-[#F8FAFC]">{account.email || "—"}</p>
+                  <p className="text-sm text-[#94A3B8] italic">
+                    {account.saleKind === "full" ? "Cuenta completa" : account.label || "Perfiles"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#0B111C] p-3">
+                    <div>
+                      <p className="text-[11px] font-semibold tracking-wide text-[#94A3B8] uppercase">ID cuenta</p>
+                      <p className="mt-1 font-mono text-base font-semibold text-[#7DD3FC]">{accountCode(account)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold tracking-wide text-[#94A3B8] uppercase">Vencimiento</p>
+                      {account.expiresAt && dias !== null ? (
+                        <>
+                          <p className={`mt-1 text-base font-semibold ${colorDias(estadoDesdeDias(dias))}`}>
+                            {dias < 0 ? `Venció hace ${Math.abs(dias)} d` : `${dias} d`}
+                          </p>
+                          <p className="text-sm text-[#94A3B8]">{formatDdMmYyyy(account.expiresAt)}</p>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-base text-[#94A3B8]">—</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href={consultHref(account)}
+                      className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#2563EB] px-3 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
+                    >
+                      <MailIcon className="h-4 w-4" />
+                      Consultar mensajes
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => copyAccount(account)}
+                      className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#253047] bg-[#1B2436] px-3 text-sm font-semibold text-white hover:bg-[#232F47]"
+                    >
+                      <CopyIcon className="h-4 w-4" />
+                      {copied === account.id ? "Copiado" : "Copiar"}
+                    </button>
+                    <Link
+                      href={renewHref(account)}
+                      className="inline-flex h-12 items-center justify-center rounded-xl bg-[#16A34A] px-3 text-sm font-semibold text-white hover:bg-[#15803D]"
+                    >
+                      Renovar
+                    </Link>
+                  </div>
                 </div>
-                <p className="truncate text-sm text-[#E2E8F0]">{account.email || "—"}</p>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs text-[#7DD3FC]">{accountCode(account)}</span>
-                  {renderExpiry(account)}
-                </div>
-                {renderActions(account)}
-              </div>
-            )}
+              );
+            }}
           />
         </div>
 
