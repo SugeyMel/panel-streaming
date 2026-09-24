@@ -27,12 +27,15 @@ export function DataTable<T extends { id: string }>({
   empty = "No hay registros para mostrar.",
   mobileRender,
   onReorder,
+  forceTable = false,
 }: {
   columns: Column<T>[];
   rows: T[];
   empty?: string;
   mobileRender?: (row: T) => ReactNode;
   onReorder?: (orderedIds: string[]) => void;
+  /** Muestra siempre la tabla completa (también en celular), por ejemplo dentro de un contenedor con zoom. */
+  forceTable?: boolean;
 }) {
   const [ids, setIds] = useState(() => rows.map((row) => row.id));
   const [dragId, setDragId] = useState<string | null>(null);
@@ -79,7 +82,7 @@ export function DataTable<T extends { id: string }>({
 
   return (
     <div>
-      <div className="hidden overflow-x-auto md:block">
+      <div className={forceTable ? "overflow-x-auto" : "hidden overflow-x-auto md:block"}>
         <table className="min-w-full text-left text-sm">
           <thead className="bg-[#0B111C] text-[#94A3B8]">
             <tr>
@@ -152,7 +155,7 @@ export function DataTable<T extends { id: string }>({
           </tbody>
         </table>
       </div>
-      <div className="space-y-3 p-3 md:hidden">
+      <div className={forceTable ? "hidden" : "space-y-3 p-3 md:hidden"}>
         {orderedRows.length === 0 ? (
           <p className="px-2 py-8 text-center text-sm text-[#94A3B8]">{empty}</p>
         ) : mobileRender ? (

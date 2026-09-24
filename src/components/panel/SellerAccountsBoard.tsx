@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { CopyIcon, FilterIcon, MailIcon } from "@/components/icons";
 import { AccountsPagination } from "@/components/accounts/AccountsPagination";
 import { DataTable } from "@/components/ui/DataTable";
+import { ZoomSheet } from "@/components/ui/ZoomSheet";
 import { PlatformName } from "@/components/ui/PlatformLogo";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { HealthStatusBadge } from "@/components/ui/StatusBadge";
@@ -224,7 +225,9 @@ export function SellerAccountsBoard({
           />
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl border border-[#253047]">
+        <div className="mt-4">
+          <ZoomSheet width={1050}>
+          <div className="overflow-hidden rounded-xl border border-[#253047]">
           <DataTable
             rows={visible.map((account) => ({ id: account.id, account }))}
             empty="No tienes cuentas asignadas todavía."
@@ -268,68 +271,10 @@ export function SellerAccountsBoard({
                 render: ({ account }) => renderActions(account),
               },
             ]}
-            mobileRender={({ account }) => {
-              const dias = account.expiresAt ? diasDesdeVencimiento(account.expiresAt) : null;
-              return (
-                <div className="space-y-3 rounded-2xl border border-[#253047] bg-[#0F172A] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <PlatformName
-                      platform={platforms.find((item) => item.id === account.platformId) ?? account.platformId}
-                      size={44}
-                      className="text-base font-bold"
-                    />
-                    <span className="shrink-0 [&_*]:text-sm">{renderStatus(account)}</span>
-                  </div>
-                  <p className="text-base leading-snug font-medium break-all text-[#F8FAFC]">{account.email || "—"}</p>
-                  <p className="text-sm text-[#94A3B8] italic">
-                    {account.saleKind === "full" ? "Cuenta completa" : account.label || "Perfiles"}
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 rounded-xl bg-[#0B111C] p-3">
-                    <div>
-                      <p className="text-[11px] font-semibold tracking-wide text-[#94A3B8] uppercase">ID cuenta</p>
-                      <p className="mt-1 font-mono text-base font-semibold text-[#7DD3FC]">{accountCode(account)}</p>
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-semibold tracking-wide text-[#94A3B8] uppercase">Vencimiento</p>
-                      {account.expiresAt && dias !== null ? (
-                        <>
-                          <p className={`mt-1 text-base font-semibold ${colorDias(estadoDesdeDias(dias))}`}>
-                            {dias < 0 ? `Venció hace ${Math.abs(dias)} d` : `${dias} d`}
-                          </p>
-                          <p className="text-sm text-[#94A3B8]">{formatDdMmYyyy(account.expiresAt)}</p>
-                        </>
-                      ) : (
-                        <p className="mt-1 text-base text-[#94A3B8]">—</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Link
-                      href={consultHref(account)}
-                      className="col-span-2 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#2563EB] px-3 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
-                    >
-                      <MailIcon className="h-4 w-4" />
-                      Consultar mensajes
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => copyAccount(account)}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#253047] bg-[#1B2436] px-3 text-sm font-semibold text-white hover:bg-[#232F47]"
-                    >
-                      <CopyIcon className="h-4 w-4" />
-                      {copied === account.id ? "Copiado" : "Copiar"}
-                    </button>
-                    <Link
-                      href={renewHref(account)}
-                      className="inline-flex h-12 items-center justify-center rounded-xl bg-[#16A34A] px-3 text-sm font-semibold text-white hover:bg-[#15803D]"
-                    >
-                      Renovar
-                    </Link>
-                  </div>
-                </div>
-              );
-            }}
+            forceTable
           />
+          </div>
+          </ZoomSheet>
         </div>
 
         <AccountsPagination
