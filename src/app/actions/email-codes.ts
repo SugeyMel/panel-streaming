@@ -703,17 +703,19 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     if (!assigned) return blocked("DENIED", "Esta cuenta no está asignada a tu panel.");
   }
 
-  const mailbox = mailboxes.find(
+  const usable = mailboxes.filter(
     (item) =>
-      item.codesEnabled &&
-      (mailboxMatchesService(item.email, email) || mailboxMatchesService(item.email, baseMailboxEmail(email))) &&
-      (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(platformId)),
+      item.codesEnabled && (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(platformId)),
   );
-  if (!mailbox) {
+  const direct = usable.find(
+    (item) => mailboxMatchesService(item.email, email) || mailboxMatchesService(item.email, baseMailboxEmail(email)),
+  );
+  // Correo de dominio propio reenviado a un Gmail (ej. cuenta@kitiga.com → bernito@gmail.com):
+  // se prueban los buzones conectados y se filtra por la dirección exacta, así nunca se mezclan cuentas.
+  const candidates = direct ? [direct] : isCustomDomainEmail(email) ? usable : [];
+  if (candidates.length === 0) {
     return blocked("DENIED", "Esta cuenta aún no tiene un buzón de códigos enlazado. Avisa al administrador.");
   }
-  // Si el correo es una variante (ej. nombre+3@gmail.com) se busca el código enviado a esa dirección exacta.
-  const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
 
   const [globalFilter, sellerFilter] = await Promise.all([
     loadEmailFilterPolicy(null),
@@ -739,10 +741,31 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     return notFound;
   }
 
-  let result;
-  try {
-    result = await readFilteredAccessCode(mailbox, policy, platform, recipient);
-  } catch {
+  let result: Awaited<ReturnType<typeof readFilteredAccessCode>> | undefined;
+  let failed = false;
+  for (const mailbox of candidates) {
+    // Si el correo es una variante o reenviado se busca el código enviado a esa dirección exacta.
+    const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
+    let current;
+    try {
+      current = await readFilteredAccessCode(mailbox, policy, platform, recipient);
+    } catch {
+      failed = true;
+      continue;
+    }
+    if (current.status === "found") {
+      result = current;
+      break;
+    }
+    // Se conserva el resultado más útil: con varios buzones, "no hay código" pesa más que "no conectado".
+    if (!result || result.status === "not_connected" || result.status === "reconnect") {
+      result = current;
+    }
+  }
+  if (!result) {
+    return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
+  }
+  if (failed && result.status !== "found" && result.status !== "not_found") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
   if (result.status === "not_connected") {
@@ -762,6 +785,17 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     code: result.code,
     message: "Código temporal encontrado",
   };
+}
+
+/** ¿Es un correo de dominio propio (no Gmail/Outlook/Yahoo…)? Esos suelen ser reenvíos hacia un Gmail. */
+function isCustomDomainEmail(email: string) {
+  const value = email.trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  if (at < 1) return false;
+  const domain = value.slice(at + 1);
+  return !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
+    domain,
+  );
 }
 
 /** nombre+3@gmail.com → nombre@gmail.com (solo Gmail/Outlook, donde el "+" llega al mismo buzón). */
