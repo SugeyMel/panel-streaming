@@ -240,4 +240,12 @@ export const REQUIRED_PLATFORM_SEEDS = [
     accent_from: "#0f172a",
     accent_to: "#2563eb",
   },
+  {
+    slug: "universal-plus",
+    name: "Universal+",
+    tagline: "Series y películas de Universal",
+    available: true,
+    accent_from: "#0f172a",
+    accent_to: "#6366f1",
+  },
 ] as const;
