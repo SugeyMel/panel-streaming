@@ -407,8 +407,25 @@ export function classifyEmailMessage(
   };
 }
 
+/**
+ * Convierte el HTML de un correo en texto legible.
+ * Quita estilos, scripts y comentarios: ahí hay colores como "#707070"
+ * que antes se confundían con el código.
+ */
+export function htmlToText(html: string) {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(style|script|head|title)\b[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#\d+;|&[a-z]+;/gi, " ")
+    .replace(/\s+/g, " ");
+}
+
 export function extractAccessCode(text: string) {
-  const match = /\b(\d{4,8})\b/.exec(text);
+  // Ignora números pegados a "#" (colores CSS), a letras o a otros dígitos.
+  const match = /(?<![#\w])(\d{4,8})(?![\w])/.exec(text);
   if (match) return match[1];
   // Códigos escritos con espacios entre dígitos, ej. "8 0 4 2 7 6" (Netflix).
   const spaced = /(?<!\d)(\d(?:[  ]\d){3,7})(?!\d)/.exec(text);

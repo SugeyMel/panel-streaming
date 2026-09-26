@@ -1,6 +1,7 @@
 import {
   classifyEmailMessage,
   extractAccessCode,
+  htmlToText,
   type ClassifiableMessage,
 } from "@/lib/email-code-filter";
 import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/lib/email-oauth";
@@ -55,7 +56,7 @@ function collectText(part: GmailMessage["payload"] | undefined, out: string[]) {
   const mime = part.mimeType ?? "";
   if (part.body?.data && (mime.startsWith("text/plain") || mime === "text/html")) {
     let text = decodeB64Url(part.body.data);
-    if (mime === "text/html") text = text.replace(/<[^>]+>/g, " ");
+    if (mime === "text/html") text = htmlToText(text);
     out.push(text);
   }
   for (const child of part.parts ?? []) collectText(child, out);
@@ -130,7 +131,7 @@ async function microsoftFullText(accessToken: string, id: string) {
   if (!response.ok) return { unauthorized: false as const, text: "" };
   const json = (await response.json()) as { body?: { contentType?: string; content?: string } };
   let text = json.body?.content ?? "";
-  if ((json.body?.contentType ?? "").toLowerCase() === "html") text = text.replace(/<[^>]+>/g, " ");
+  if ((json.body?.contentType ?? "").toLowerCase() === "html") text = htmlToText(text);
   return { unauthorized: false as const, text: text.slice(0, 8000) };
 }
 
