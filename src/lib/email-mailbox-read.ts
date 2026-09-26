@@ -1,4 +1,5 @@
 import {
+  accountChangeNotice,
   classifyEmailMessage,
   extractAccessCode,
   htmlToText,
@@ -68,6 +69,7 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
   if (format === "metadata") {
     url.searchParams.append("metadataHeaders", "From");
     url.searchParams.append("metadataHeaders", "Subject");
+    url.searchParams.append("metadataHeaders", "To");
   }
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -104,6 +106,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
     out.push({
       from: header(message.payload?.headers, "From"),
       subject: header(message.payload?.headers, "Subject"),
+      to: header(message.payload?.headers, "To"),
       snippet: message.snippet ?? "",
       id,
       receivedAt: Number(message.internalDate) || undefined,
@@ -166,6 +169,7 @@ async function readMicrosoft(accessToken: string, recipient?: string): Promise<C
       from: item.from?.emailAddress?.address || item.from?.emailAddress?.name || "",
       subject: item.subject ?? "",
       snippet: item.bodyPreview ?? "",
+      to: item.toRecipients?.[0]?.emailAddress?.address ?? "",
       receivedAt: item.receivedDateTime ? Date.parse(item.receivedDateTime) || undefined : undefined,
     }));
 }
@@ -224,4 +228,82 @@ export async function readFilteredAccessCode(
     return { status: "found", type: firstType, code: history[0].code, history };
   }
   return { status: "not_found" };
+}
+
+export type AccountChangeNotice = {
+  id: string;
+  to: string;
+  kind: "password" | "email" | "account";
+  at?: number;
+};
+
+/** Correo "limpio" de la cabecera To: "Nombre <a@b.com>" → "a@b.com". */
+function plainAddress(value: string) {
+  const match = /<([^>]+)>/.exec(value);
+  return (match?.[1] ?? value).split(",")[0].trim().toLowerCase();
+}
+
+/**
+ * Busca avisos de Disney de cambio de clave o correo en un buzón (por defecto, últimas 24 horas).
+ * Solo lee; no marca nada ni muestra estos mensajes a nadie.
+ */
+export async function findAccountChangeNotices(
+  mailbox: { id: string },
+  sinceMs = Date.now() - 24 * 60 * 60 * 1000,
+): Promise<AccountChangeNotice[]> {
+  const access = await getValidAccessToken(mailbox.id);
+  if (!access.ok) return [];
+  const token = access.token.accessToken;
+  let messages: ClassifiableMessage[] = [];
+
+  if (access.token.provider === "google") {
+    const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    listUrl.searchParams.set("maxResults", "20");
+    listUrl.searchParams.set(
+      "q",
+      `after:${Math.floor(sinceMs / 1000)} from:disneyplus.com (subject:"MyDisney actualizada" OR subject:"MyDisney account")`,
+    );
+    const listRes = await fetch(listUrl, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    if (!listRes.ok) return [];
+    const list = (await listRes.json()) as GmailList;
+    const metas = await Promise.all((list.messages ?? []).map((item) => gmailMessage(token, item.id, "metadata")));
+    metas.forEach((meta, index) => {
+      const message = "message" in meta ? meta.message : null;
+      const id = list.messages?.[index]?.id;
+      if (!message || !id) return;
+      messages.push({
+        id,
+        from: header(message.payload?.headers, "From"),
+        subject: header(message.payload?.headers, "Subject"),
+        to: header(message.payload?.headers, "To"),
+        snippet: message.snippet ?? "",
+        receivedAt: Number(message.internalDate) || undefined,
+      });
+    });
+  } else {
+    const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
+    url.searchParams.set("$top", "50");
+    url.searchParams.set("$orderby", "receivedDateTime desc");
+    url.searchParams.set("$filter", `receivedDateTime ge ${new Date(sinceMs).toISOString()}`);
+    url.searchParams.set("$select", "id,from,subject,bodyPreview,receivedDateTime,toRecipients");
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    if (!response.ok) return [];
+    const json = (await response.json()) as GraphList;
+    messages = (json.value ?? []).map((item) => ({
+      id: item.id,
+      from: item.from?.emailAddress?.address || "",
+      subject: item.subject ?? "",
+      snippet: item.bodyPreview ?? "",
+      to: item.toRecipients?.[0]?.emailAddress?.address ?? "",
+      receivedAt: item.receivedDateTime ? Date.parse(item.receivedDateTime) || undefined : undefined,
+    }));
+  }
+
+  const out: AccountChangeNotice[] = [];
+  for (const message of messages) {
+    const kind = accountChangeNotice(message);
+    if (!kind || !message.id) continue;
+    out.push({ id: message.id, to: plainAddress(message.to ?? ""), kind, at: message.receivedAt });
+  }
+  return out;
 }

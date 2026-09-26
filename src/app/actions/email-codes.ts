@@ -780,6 +780,18 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
   }
   if (result.status === "not_found") return notFound;
 
+  // Se guarda quién pidió el código (para la alerta de cambio de clave/correo). Si falla, no bloquea al vendedor.
+  try {
+    await db()?.from("seller_code_lookups").insert({
+      seller_id: sellerId,
+      platform_id: platformId,
+      email: email.toLowerCase(),
+      code: result.code,
+    });
+  } catch {
+    /* sin registro no pasa nada grave */
+  }
+
   return {
     type: result.type,
     status: "FOUND",

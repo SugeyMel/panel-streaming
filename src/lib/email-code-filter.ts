@@ -7,6 +7,8 @@ export type ClassifiableMessage = {
   id?: string;
   /** Momento en que llegó el mensaje (ms desde 1970), si el proveedor lo entrega. */
   receivedAt?: number;
+  /** Destinatario (cabecera To), útil para correos reenviados desde un dominio propio. */
+  to?: string;
 };
 
 export type MessageVerdict = {
@@ -216,7 +218,30 @@ const OWNERSHIP = [
   "verify it's you",
   "somos nosotros",
   "did you request a transfer",
+  // Disney: aviso de que se cambió la clave o el correo de la cuenta
+  "cuenta de mydisney actualizada",
+  "mydisney account updated",
+  "se cambio la contrasena",
 ];
+
+/**
+ * Aviso de Disney de que alguien cambió la clave o el correo de la cuenta.
+ * Devuelve qué se cambió, o null si el mensaje no es ese aviso.
+ */
+export function accountChangeNotice(message: ClassifiableMessage): "password" | "email" | "account" | null {
+  const host = domainOf(message.from);
+  if (!hostMatches(host, ["disneyplus.com", "disney.com"])) return null;
+  const subject = fold(message.subject);
+  const isNotice =
+    subject.includes("cuenta de mydisney actualizada") ||
+    subject.includes("mydisney account updated") ||
+    subject.includes("mydisney account has been updated");
+  if (!isNotice) return null;
+  const text = fold(`${message.subject} ${message.snippet ?? ""}`);
+  if (text.includes("contrasena") || text.includes("password")) return "password";
+  if (text.includes("correo") || text.includes("email")) return "email";
+  return "account";
+}
 
 const LOGIN_SUBJECTS = [
   "sign-in code",

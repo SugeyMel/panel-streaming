@@ -1,4 +1,6 @@
+import { AccountChangeAlerts } from "@/components/admin/AccountChangeAlerts";
 import { AdminHomeDashboard } from "@/components/admin/AdminHomeDashboard";
+import { loadAccountChangeAlerts } from "@/lib/account-alerts";
 import { getAppSession } from "@/lib/auth/get-session";
 import { loadCustomers, loadSellers, loadWholesaleSales } from "@/lib/data/queries";
 import {
@@ -10,11 +12,12 @@ import {
 } from "@/lib/admin-home";
 
 export default async function AdminDashboardPage() {
-  const [session, sellers, customers, wholesaleSales] = await Promise.all([
+  const [session, sellers, customers, wholesaleSales, accountAlerts] = await Promise.all([
     getAppSession(),
     loadSellers(),
     loadCustomers(),
     loadWholesaleSales(),
+    loadAccountChangeAlerts(),
   ]);
 
   const data: AdminHomePayload = {
@@ -35,5 +38,10 @@ export default async function AdminDashboardPage() {
     wholesaleSales: wholesaleIncomeFromSales(wholesaleSales, sellers),
   };
 
-  return <AdminHomeDashboard data={data} />;
+  return (
+    <>
+      <AccountChangeAlerts alerts={accountAlerts} />
+      <AdminHomeDashboard data={data} />
+    </>
+  );
 }
