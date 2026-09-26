@@ -3,10 +3,13 @@
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { auditLogs } from "@/data/mock";
+import type { AuditLog } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 
 // La tabla (DataTable) funciona en el navegador, por eso esta página también.
+// Sin ejemplos: el historial empieza vacío.
+const auditLogs: AuditLog[] = [];
+
 export default function AdminHistoryPage() {
   return (
     <div>
