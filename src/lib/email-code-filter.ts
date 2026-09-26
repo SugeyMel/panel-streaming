@@ -238,8 +238,10 @@ export function accountChangeNotice(message: ClassifiableMessage): "password" | 
     subject.includes("mydisney account has been updated");
   if (!isNotice) return null;
   const text = fold(`${message.subject} ${message.snippet ?? ""}`);
+  // Primero el título del aviso (es lo más fiable), luego palabras sueltas.
+  if (/contrasena de mydisney actualizada|se cambio la contrasena|password (was |has been )?(changed|updated)/.test(text)) return "password";
+  if (/correo( electronico)? de mydisney actualizado|se cambio (el|la direccion de) correo|email (address )?(was |has been )?(changed|updated)/.test(text)) return "email";
   if (text.includes("contrasena") || text.includes("password")) return "password";
-  if (text.includes("correo") || text.includes("email")) return "email";
   return "account";
 }
 

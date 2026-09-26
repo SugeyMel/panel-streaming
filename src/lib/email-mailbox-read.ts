@@ -301,8 +301,15 @@ export async function findAccountChangeNotices(
 
   const out: AccountChangeNotice[] = [];
   for (const message of messages) {
-    const kind = accountChangeNotice(message);
-    if (!kind || !message.id) continue;
+    if (!message.id || !accountChangeNotice(message)) continue;
+    // El resumen del correo llega vacío (Disney lo rellena con espacios ocultos):
+    // se lee el texto completo para saber si cambió la contraseña o el correo.
+    const full =
+      access.token.provider === "google"
+        ? await gmailFullText(token, message.id)
+        : await microsoftFullText(token, message.id);
+    const kind = accountChangeNotice({ ...message, snippet: full.text || message.snippet });
+    if (!kind) continue;
     out.push({ id: message.id, to: plainAddress(message.to ?? ""), kind, at: message.receivedAt });
   }
   return out;
