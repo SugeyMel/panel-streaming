@@ -173,7 +173,12 @@ export function SellerCodeLookup({
           </p>
           {result.status === "FOUND" && result.code ? (
             <div className="mt-2 flex items-center justify-between gap-3">
-              <span className="text-3xl font-bold tracking-[0.25em] text-white">{result.code}</span>
+              <span className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold tracking-[0.25em] text-white">{result.code}</span>
+                {result.history?.[0]?.at ? (
+                  <span className="text-xs text-[#94A3B8]">{codeAgeLabel(result.history[0].at)}</span>
+                ) : null}
+              </span>
               <button
                 type="button"
                 onClick={() => copyCode(result.code ?? "")}
