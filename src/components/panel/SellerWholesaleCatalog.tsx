@@ -79,11 +79,22 @@ export function SellerWholesaleCatalog({
         <div
           className={
             compact
-              ? "grid grid-cols-2 gap-2.5 @min-[420px]:grid-cols-3"
+              ? "grid grid-cols-1 gap-2.5 @min-[340px]:grid-cols-2 @min-[480px]:grid-cols-3"
               : "grid grid-cols-1 gap-3 @md:grid-cols-2 @xl:grid-cols-3"
           }
         >
-          {products.map((product) => (
+          {products.map((product) =>
+            compact ? (
+              <WholesaleSquareCard
+                key={product.id}
+                product={product}
+                platform={platforms.find((item) => item.id === product.platformId) ?? null}
+                onDetails={() => {
+                  setMessage(null);
+                  setOpenId(product.id);
+                }}
+              />
+            ) : (
             <WholesalePreviewCard
               key={product.id}
               product={product}
@@ -94,7 +105,8 @@ export function SellerWholesaleCatalog({
                 setOpenId(product.id);
               }}
             />
-          ))}
+            ),
+          )}
         </div>
       )}
       {open ? (
@@ -110,6 +122,56 @@ export function SellerWholesaleCatalog({
         />
       ) : null}
     </div>
+  );
+}
+
+/** Tarjeta cuadrada y compacta (Consultas): imagen, "👑 CUENTA COMPLETA", nombre y precio. Toda la tarjeta abre el detalle. */
+function WholesaleSquareCard({
+  product,
+  platform,
+  onDetails,
+}: {
+  product: WholesaleCatalogProduct;
+  platform: Platform | null;
+  onDetails: () => void;
+}) {
+  const pricing = wholesalePricing(product);
+  const copy = wholesaleCatalogCopy(product.offerKind, product.description);
+  const out = product.available <= 0;
+
+  return (
+    <button
+      type="button"
+      onClick={onDetails}
+      aria-label={`Ver detalles de ${product.name}`}
+      className="group relative block w-full overflow-hidden rounded-2xl border border-[#253047] bg-[#0B111C] text-left transition hover:border-[#7C3AED]/70 hover:shadow-[0_0_0_1px_rgba(124,58,237,0.35)] focus-visible:outline-2 focus-visible:outline-[#7C3AED]"
+    >
+      <div className="relative aspect-[16/10] @min-[340px]:aspect-square">
+        <WholesaleCover
+          imageUrl={product.imageUrl}
+          platform={platform}
+          name={product.name}
+          className={`h-full transition duration-300 group-hover:scale-[1.03] ${out ? "opacity-50 grayscale" : ""}`}
+        />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-3/5 bg-gradient-to-t from-black/90 via-black/45 to-transparent" />
+        <span className="absolute top-2 right-2 rounded-full bg-[#E50914] px-2 py-0.5 text-[9px] font-bold tracking-wide text-white uppercase shadow">
+          👑 {copy.badge}
+        </span>
+        {out ? (
+          <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border border-[#F87171]/60 bg-black/75 px-2.5 py-1 text-[11px] font-bold tracking-wide text-[#F87171]">
+            SIN STOCK
+          </span>
+        ) : null}
+        <div className="absolute inset-x-2 bottom-2">
+          <p className="truncate text-center text-[11px] font-bold tracking-wide text-white uppercase drop-shadow">
+            {product.name}
+          </p>
+          <p className="mt-1 rounded-xl border border-[#7C3AED] bg-[#0B111C]/85 py-1 text-center text-[17px] leading-tight font-bold text-white">
+            {formatStorePrice(pricing.fromPrice)}
+          </p>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -213,7 +275,10 @@ function WholesaleDetailsSheet({
       <div className="relative z-10 flex max-h-[94vh] w-full flex-col overflow-hidden rounded-t-3xl border border-[#253047] bg-[#0B111C] sm:max-w-md sm:rounded-2xl">
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="relative">
-            <WholesaleCover imageUrl={product.imageUrl} platform={platform} name={product.name} className="h-32" />
+            <WholesaleCover imageUrl={product.imageUrl} platform={platform} name={product.name} className="h-44" />
+            <span className="absolute top-2.5 left-2.5 rounded-full bg-[#E50914] px-2.5 py-0.5 text-[10px] font-bold tracking-wide text-white uppercase">
+              👑 {copy.badge}
+            </span>
             <button
               type="button"
               onClick={onClose}
@@ -224,8 +289,20 @@ function WholesaleDetailsSheet({
             </button>
           </div>
           <div className="px-4 pt-3 pb-4">
-            <h2 className="text-lg font-bold text-white">{product.name}</h2>
-            <p className="mt-0.5 text-[12px] text-[#94A3B8]">{copy.subtitle}</p>
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-lg font-bold text-white">{product.name}</h2>
+              <p className="shrink-0 text-lg font-bold text-white">{formatStorePrice(pricing.fromPrice)}</p>
+            </div>
+            {product.description?.trim() ? null : (
+              <p className="mt-0.5 text-[12px] text-[#94A3B8]">{copy.subtitle}</p>
+            )}
+            <p
+              className={`mt-2 inline-flex rounded-lg px-2 py-0.5 text-[11px] font-semibold ${
+                product.available > 0 ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-[#F87171]"
+              }`}
+            >
+              {product.available > 0 ? `Stock disponible: ${product.available}` : "SIN STOCK"}
+            </p>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
               {copy.tags.map((tag) => (
                 <span
@@ -236,6 +313,32 @@ function WholesaleDetailsSheet({
                 </span>
               ))}
             </div>
+
+            {product.description?.trim() ? (
+              <>
+                <h3 className="mt-4 text-sm font-semibold text-white">Descripción</h3>
+                <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-[#CBD5E1]">
+                  {product.description.trim()}
+                </p>
+              </>
+            ) : null}
+
+            {copy.features.length ? (
+              <>
+                <h3 className="mt-4 text-sm font-semibold text-white">Características</h3>
+                <ul className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {copy.features.map((item) => {
+                    const Icon = featureIcons[item.key];
+                    return (
+                      <li key={item.key} className="flex items-center gap-2 text-[12px] text-[#E2E8F0]">
+                        <Icon className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" />
+                        {item.label}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : null}
 
             <h3 className="mt-4 text-sm font-semibold text-white">Precios</h3>
             <div className="mt-2 space-y-2">
