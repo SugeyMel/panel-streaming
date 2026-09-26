@@ -1,4 +1,5 @@
 import { SellerWholesaleCatalog } from "@/components/panel/SellerWholesaleCatalog";
+import { loadAdminWhatsapp } from "@/lib/seller-permissions";
 import { loadPlatforms, loadSupplierProducts } from "@/lib/data/queries";
 
 export default async function SellerWholesalePage({
@@ -6,10 +7,11 @@ export default async function SellerWholesalePage({
 }: {
   searchParams: Promise<{ producto?: string }>;
 }) {
-  const [{ producto }, products, platforms] = await Promise.all([
+  const [{ producto }, products, platforms, adminWhatsapp] = await Promise.all([
     searchParams,
     loadSupplierProducts(),
     loadPlatforms(),
+    loadAdminWhatsapp(),
   ]);
   const catalog = products.filter((row) => row.status === "active");
 
@@ -22,7 +24,12 @@ export default async function SellerWholesalePage({
           unidad.
         </p>
       </div>
-      <SellerWholesaleCatalog products={catalog} platforms={platforms} initialProductId={producto} />
+      <SellerWholesaleCatalog
+        products={catalog}
+        platforms={platforms}
+        initialProductId={producto}
+        adminWhatsapp={adminWhatsapp}
+      />
     </div>
   );
 }

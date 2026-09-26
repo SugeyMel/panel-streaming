@@ -1,5 +1,6 @@
 import { SellerCodeLookup } from "@/components/panel/SellerCodeLookup";
 import { SellerWholesaleCatalog } from "@/components/panel/SellerWholesaleCatalog";
+import { loadAdminWhatsapp } from "@/lib/seller-permissions";
 import { loadPlatforms, loadSupplierProducts, panelScope } from "@/lib/data/queries";
 
 export default async function SellerConsultasPage({
@@ -10,7 +11,11 @@ export default async function SellerConsultasPage({
   const { plataforma, correo } = await searchParams;
   // panelScope() se mantiene: valida la sesión y prepara el diseño inicial del vendedor.
   await panelScope();
-  const [platforms, supplierProducts] = await Promise.all([loadPlatforms(), loadSupplierProducts()]);
+  const [platforms, supplierProducts, adminWhatsapp] = await Promise.all([
+    loadPlatforms(),
+    loadSupplierProducts(),
+    loadAdminWhatsapp(),
+  ]);
   // Productos que el administrador publicó/habilitó para los vendedores.
   const catalog = supplierProducts.filter((row) => row.status === "active");
 
@@ -33,7 +38,7 @@ export default async function SellerConsultasPage({
             No hay productos disponibles en este momento.
           </p>
         ) : (
-          <SellerWholesaleCatalog products={catalog} platforms={platforms} compact />
+          <SellerWholesaleCatalog products={catalog} platforms={platforms} compact adminWhatsapp={adminWhatsapp} />
         )}
       </section>
     </div>

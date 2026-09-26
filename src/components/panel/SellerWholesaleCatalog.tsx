@@ -15,6 +15,7 @@ import {
   UserIcon,
 } from "@/components/icons";
 import { WholesaleCover } from "@/components/panel/WholesaleProductImage";
+import { adminWhatsappLink } from "@/lib/admin-contact";
 import { formatStorePrice } from "@/lib/store-catalog";
 import type { Platform, WholesaleCatalogProduct } from "@/lib/types";
 import {
@@ -42,10 +43,13 @@ export function SellerWholesaleCatalog({
   platforms,
   initialProductId,
   compact = false,
+  adminWhatsapp,
 }: {
   products: WholesaleCatalogProduct[];
   platforms: Platform[];
   initialProductId?: string;
+  /** WhatsApp del administrador: "Comprar ahora" abre el chat con el pedido en vez de registrar la compra. */
+  adminWhatsapp?: string;
   /** Tarjetas más pequeñas en cuadrícula de 3 columnas (pantalla Consultas). */
   compact?: boolean;
 }) {
@@ -113,6 +117,7 @@ export function SellerWholesaleCatalog({
         <WholesaleDetailsSheet
           product={open}
           platform={platforms.find((item) => item.id === open.platformId) ?? null}
+          adminWhatsapp={adminWhatsapp}
           onClose={() => setOpenId(null)}
           onBought={(text) => {
             setMessage(text);
@@ -251,11 +256,13 @@ function WholesalePreviewCard({
 function WholesaleDetailsSheet({
   product,
   platform,
+  adminWhatsapp,
   onClose,
   onBought,
 }: {
   product: WholesaleCatalogProduct;
   platform: Platform | null;
+  adminWhatsapp?: string;
   onClose: () => void;
   onBought: (text: string) => void;
 }) {
@@ -411,6 +418,17 @@ function WholesaleDetailsSheet({
             disabled={pending || out}
             className={purpleBtn}
             onClick={async () => {
+              if (adminWhatsapp) {
+                // Se abre el WhatsApp del administrador con el pedido listo; el administrador confirma el pago y la entrega.
+                const text =
+                  `Hola, quiero comprar: ${product.name}\n` +
+                  (qty > 1
+                    ? `Cantidad: ${qty} unidades a ${formatStorePrice(unitCost)} c/u\n`
+                    : `Cantidad: 1 unidad a ${formatStorePrice(unitCost)}\n`) +
+                  `Total: ${formatStorePrice(total)}`;
+                window.open(adminWhatsappLink(adminWhatsapp, text), "_blank", "noopener,noreferrer");
+                return;
+              }
               setPending(true);
               setError(null);
               const formData = new FormData();
@@ -430,7 +448,7 @@ function WholesaleDetailsSheet({
             }}
           >
             <ShoppingBagIcon className="h-4 w-4" />
-            {pending ? "Procesando…" : "Comprar ahora"}
+            {pending ? "Procesando…" : adminWhatsapp ? "Comprar por WhatsApp" : "Comprar ahora"}
           </button>
         </div>
       </div>
