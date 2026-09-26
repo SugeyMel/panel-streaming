@@ -9,6 +9,7 @@ import {
   loadServices,
   loadStreamingAccounts,
 } from "@/lib/data/queries";
+import { loadCodeSettings } from "@/lib/code-settings";
 import { readFilteredAccessCode } from "@/lib/email-mailbox-read";
 import { deleteOAuthTokens } from "@/lib/email-oauth";
 import {
@@ -512,6 +513,15 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
   ]);
   const policy = mergeEmailFilterPolicies(globalFilter, sellerFilter);
   const platform = platforms.find((item) => item.id === service.platformId);
+  const codeSettings = await loadCodeSettings();
+  policy.allowDisneyHousehold = codeSettings.allowDisneyHousehold;
+  if (codeSettings.disabledPlatformIds.includes(service.platformId)) {
+    return {
+      type: "UNKNOWN_BLOCKED",
+      status: "DENIED",
+      message: `Los códigos de ${platform?.name ?? "esta plataforma"} están pausados por el administrador.`,
+    };
+  }
 
   if (session.mode === "demo") {
     const messages = simulatedRecentMessages(platform ?? { slug: "", name: "" });
@@ -696,6 +706,10 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
   ]);
   const platform = platforms.find((item) => item.id === platformId);
   if (!platform) return blocked("DENIED", "Esa plataforma no está disponible.");
+  const codeSettings = await loadCodeSettings();
+  if (codeSettings.disabledPlatformIds.includes(platformId)) {
+    return blocked("DENIED", `Los códigos de ${platform.name} están pausados por el administrador.`);
+  }
 
   if (live) {
     const assigned = ownAccounts.some(
@@ -723,6 +737,7 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     loadEmailFilterPolicy(sellerId),
   ]);
   const policy = mergeEmailFilterPolicies(globalFilter, sellerFilter);
+  policy.allowDisneyHousehold = codeSettings.allowDisneyHousehold;
   const notFound = blocked(
     "NOT_FOUND",
     "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",

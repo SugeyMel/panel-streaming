@@ -238,10 +238,8 @@ export function accountChangeNotice(message: ClassifiableMessage): "password" | 
     subject.includes("mydisney account has been updated");
   if (!isNotice) return null;
   const text = fold(`${message.subject} ${message.snippet ?? ""}`);
-  // Primero el título del aviso (es lo más fiable), luego palabras sueltas.
-  if (/contrasena de mydisney actualizada|se cambio la contrasena|password (was |has been )?(changed|updated)/.test(text)) return "password";
-  if (/correo( electronico)? de mydisney actualizado|se cambio (el|la direccion de) correo|email (address )?(was |has been )?(changed|updated)/.test(text)) return "email";
   if (text.includes("contrasena") || text.includes("password")) return "password";
+  if (text.includes("correo") || text.includes("email")) return "email";
   return "account";
 }
 
@@ -283,6 +281,15 @@ const TRAVEL_SUBJECTS = [
   "travel",
   "update your tv",
   "codigo de tv",
+];
+
+// Disney+: "¿Vas a actualizar tu Hogar de Disney+?"
+const DISNEY_HOUSEHOLD = [
+  "actualizar tu hogar de disney",
+  "hogar de disney",
+  "solicito actualizar el hogar",
+  "disney+ household",
+  "update your household",
 ];
 
 const HOUSEHOLD_SUBJECTS = [
@@ -408,6 +415,22 @@ export function classifyEmailMessage(
       category: "household",
       reason: "Permitido: actualizar hogar de Netflix.",
     };
+  }
+  // Disney Hogar: va antes que "inicio de sesión" porque el correo también dice "código de acceso".
+  if (slug.toLowerCase().includes("disney") && senderOk && includesAny(text, DISNEY_HOUSEHOLD)) {
+    return policy.allowDisneyHousehold
+      ? {
+          decision: "allow",
+          type: "NETFLIX_HOUSEHOLD_ACTION",
+          category: "household",
+          reason: "Permitido: actualizar Hogar de Disney+.",
+        }
+      : {
+          decision: "block",
+          type: "UNKNOWN_BLOCKED",
+          category: "household",
+          reason: "Bloqueado: actualizar Hogar de Disney+ está desactivado.",
+        };
   }
   if (senderOk && policy.allowLoginCode && includesAny(text, LOGIN_SUBJECTS)) {
     return {

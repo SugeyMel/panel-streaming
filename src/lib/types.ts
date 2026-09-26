@@ -330,6 +330,8 @@ export type EmailCodeFilterPolicy = {
   allowVerificationCode: boolean;
   allowNetflixTravel: boolean;
   allowNetflixHousehold: boolean;
+  /** Disney+ · actualizar Hogar (se activa en Administrador → Correos → Códigos por plataforma). */
+  allowDisneyHousehold?: boolean;
   extraBlockKeywords: string[];
 };
 

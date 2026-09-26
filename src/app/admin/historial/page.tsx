@@ -1,9 +1,12 @@
+"use client";
+
 import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { auditLogs } from "@/data/mock";
 import { formatDate } from "@/lib/format";
 
+// La tabla (DataTable) funciona en el navegador, por eso esta página también.
 export default function AdminHistoryPage() {
   return (
     <div>
