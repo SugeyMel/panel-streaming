@@ -184,7 +184,7 @@ export function SellerCodeLookup({
               </button>
             </div>
           ) : null}
-          {result.status === "FOUND" && result.history && result.history.length > 1 ? (
+          {result.status === "FOUND" && result.history && result.history.length > 0 ? (
             <div className="mt-4 border-t border-emerald-500/20 pt-3">
               <p className="text-xs font-semibold text-emerald-200/80">
                 Códigos de los últimos 30 minutos
