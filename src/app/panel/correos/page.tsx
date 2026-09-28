@@ -1,7 +1,8 @@
 import { EmailCodesBoard } from "@/components/email/EmailCodesBoard";
 import { SellerAccessPromo } from "@/components/panel/SellerAccessPromo";
-import { loadAdminWhatsapp } from "@/lib/seller-permissions";
-import { loadEmailCodesBundle, loadPlatforms, panelScope, loadStreamingAccounts } from "@/lib/data/queries";
+import { SellerCustomersBoard } from "@/components/panel/SellerCustomersBoard";
+import { loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
+import { loadCustomers, loadEmailCodesBundle, loadPlatforms, panelScope, loadStreamingAccounts } from "@/lib/data/queries";
 import { isGoogleOAuthConfigured, isMicrosoftOAuthConfigured, oauthRedirectUri } from "@/lib/email-oauth-config";
 
 export const dynamic = "force-dynamic";
@@ -13,17 +14,20 @@ export default async function SellerEmailsPage({
 }) {
   const { sellerId } = await panelScope();
   const { oauth } = await searchParams;
-  const [bundle, platforms, accounts, adminWhatsapp] = await Promise.all([
+  const [bundle, platforms, accounts, adminWhatsapp, customers, canCreate] = await Promise.all([
     loadEmailCodesBundle(sellerId),
     loadPlatforms(),
     loadStreamingAccounts(sellerId),
     loadAdminWhatsapp(),
+    loadCustomers(sellerId),
+    sellerCanCreateCustomers(sellerId),
   ]);
 
   return (
     <div className="space-y-4">
-    {/* Crear acceso a clientes: planes por WhatsApp (el registro real de clientes llega en la siguiente fase). */}
-    <SellerAccessPromo platforms={platforms} adminWhatsapp={adminWhatsapp} />
+    {/* Si aún no tiene activado crear clientes, se muestran los planes para contratarlo por WhatsApp. */}
+    {canCreate ? null : <SellerAccessPromo platforms={platforms} adminWhatsapp={adminWhatsapp} />}
+    <SellerCustomersBoard customers={customers} canCreate={canCreate} adminWhatsapp={adminWhatsapp} />
     <EmailCodesBoard
       mode="seller"
       sellerId={sellerId}

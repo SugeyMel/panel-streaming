@@ -6,7 +6,7 @@ import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { isPhoneLogin, normalizePhone, phoneToAuthEmail, toAuthEmail } from "@/lib/auth/phone-login";
 import { whatsappParaGuardar } from "@/lib/clientes";
 import { customersDisabledMessage, normalizeAdminWhatsapp } from "@/lib/admin-contact";
-import { loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
+import { clientCodesSettingKey, loadAdminWhatsapp, sellerCanCreateCustomers } from "@/lib/seller-permissions";
 import { isHomeImageSlot } from "@/lib/home-images";
 import {
   MAX_CUERPO_WHATSAPP,
@@ -326,6 +326,7 @@ export async function upsertSellerAction(formData: FormData) {
   profileId = access.profileId;
 
   const row = profileId ? { ...payload, profile_id: profileId } : payload;
+  let savedSellerId = id;
   if (id) {
     const { error } = await supabase.from("sellers").update(row).eq("id", id);
     if (error) return { ok: false, error: error.message };
@@ -339,6 +340,17 @@ export async function upsertSellerAction(formData: FormData) {
       return { ok: false, error: error.message };
     }
     if (created?.id) await copySellerVisualTemplate(String(created.id));
+    savedSellerId = created?.id ? String(created.id) : "";
+  }
+  // Gestor de códigos para los clientes de este vendedor (se activa cuando paga su plan).
+  const clientCodes = formData.get("clientCodes");
+  const settingsWriter = createServiceClient();
+  if (savedSellerId && clientCodes !== null && settingsWriter) {
+    await settingsWriter.from("app_settings").upsert({
+      key: clientCodesSettingKey(savedSellerId),
+      value: String(clientCodes) === "off" ? "off" : "on",
+      updated_at: new Date().toISOString(),
+    });
   }
   revalidatePath("/admin/vendedores");
   return { ok: true };

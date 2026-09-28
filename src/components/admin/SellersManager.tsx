@@ -42,7 +42,14 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "desactivado", label: "Desactivados" },
 ];
 
-export function SellersManager({ sellers }: { sellers: Seller[] }) {
+export function SellersManager({
+  sellers,
+  clientCodes = {},
+}: {
+  sellers: Seller[];
+  /** Por vendedor: ¿sus clientes pueden usar el gestor de códigos? */
+  clientCodes?: Record<string, boolean>;
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("todos");
@@ -269,6 +276,17 @@ export function SellersManager({ sellers }: { sellers: Seller[] }) {
             >
               <option value="on">Activado: puede crear clientes</option>
               <option value="off">Desactivado: debe contactarte por WhatsApp</option>
+            </select>
+          </label>
+          <label className="block space-y-1">
+            <span className="text-sm text-[#94A3B8]">Gestor de códigos para sus clientes</span>
+            <select
+              name="clientCodes"
+              defaultValue={editing && clientCodes[editing.id] === false ? "off" : "on"}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+            >
+              <option value="on">Activado: sus clientes pueden consultar códigos</option>
+              <option value="off">Desactivado: sus clientes no ven el gestor de códigos</option>
             </select>
           </label>
           <p className="text-xs text-[#94A3B8]">

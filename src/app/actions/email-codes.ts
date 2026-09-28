@@ -10,6 +10,7 @@ import {
   loadStreamingAccounts,
 } from "@/lib/data/queries";
 import { loadCodeSettings } from "@/lib/code-settings";
+import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
 import { readFilteredAccessCode } from "@/lib/email-mailbox-read";
 import { deleteOAuthTokens } from "@/lib/email-oauth";
 import {
@@ -455,6 +456,15 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
       type: "UNKNOWN_BLOCKED",
       status: "DENIED",
       message: "Este servicio no está asignado a tu cuenta.",
+    };
+  }
+
+  // El administrador puede desactivar el gestor de códigos para los clientes de un vendedor.
+  if (!(await sellerClientCodesEnabled(service.sellerId))) {
+    return {
+      type: "UNKNOWN_BLOCKED",
+      status: "DENIED",
+      message: "El gestor de códigos no está activo. Consulta con tu vendedor.",
     };
   }
 
