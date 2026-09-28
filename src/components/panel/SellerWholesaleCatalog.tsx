@@ -31,6 +31,7 @@ const featureIcons: Record<WholesaleFeatureKey, ComponentType<SVGProps<SVGSVGEle
   quality: PlayIcon,
   content: GlobeIcon,
   resale: CheckIcon,
+  custom: CheckIcon,
 };
 
 const purpleBtn =
@@ -220,7 +221,7 @@ function WholesalePreviewCard({
             const Icon = featureIcons[item.key];
             return (
               <li
-                key={item.key}
+                key={`${item.key}-${item.label}`}
                 className={`flex items-center text-[#E2E8F0] ${compact ? "gap-1.5 text-[10px]" : "gap-2 text-[12px]"}`}
               >
                 <Icon className={`shrink-0 text-[#94A3B8] ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`} />
@@ -300,7 +301,7 @@ function WholesaleDetailsSheet({
               <h2 className="text-lg font-bold text-white">{product.name}</h2>
               <p className="shrink-0 text-lg font-bold text-white">{formatStorePrice(pricing.fromPrice)}</p>
             </div>
-            {product.description?.trim() ? null : (
+            {copy.text ? null : (
               <p className="mt-0.5 text-[12px] text-[#94A3B8]">{copy.subtitle}</p>
             )}
             <p
@@ -321,11 +322,11 @@ function WholesaleDetailsSheet({
               ))}
             </div>
 
-            {product.description?.trim() ? (
+            {copy.text ? (
               <>
                 <h3 className="mt-4 text-sm font-semibold text-white">Descripción</h3>
                 <p className="mt-1.5 text-[12px] leading-relaxed whitespace-pre-line text-[#CBD5E1]">
-                  {product.description.trim()}
+                  {copy.text}
                 </p>
               </>
             ) : null}
@@ -337,7 +338,7 @@ function WholesaleDetailsSheet({
                   {copy.features.map((item) => {
                     const Icon = featureIcons[item.key];
                     return (
-                      <li key={item.key} className="flex items-center gap-2 text-[12px] text-[#E2E8F0]">
+                      <li key={`${item.key}-${item.label}`} className="flex items-center gap-2 text-[12px] text-[#E2E8F0]">
                         <Icon className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" />
                         {item.label}
                       </li>

@@ -19,7 +19,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { supplierProductImagePublicUrl } from "@/lib/supplier-product-images";
 import { writeSupplierProductImage } from "@/lib/supplier-product-upload";
 import { DEFAULT_SUPPORT_HOURS, type CustomerStatus, type SellerStatus } from "@/lib/types";
-import { parsePricingToken, wholesalePricing, withPricingToken, withSortToken, nextWholesaleSortOrder } from "@/lib/wholesale";
+import { joinProductDescription, parsePricingToken, wholesalePricing, withPricingToken, withSortToken, nextWholesaleSortOrder } from "@/lib/wholesale";
 import { canonicalPlatformName } from "@/lib/platform-logos";
 import { copySellerVisualTemplate } from "@/lib/seller-visual-template";
 
@@ -844,7 +844,10 @@ export async function upsertSupplierProductAction(formData: FormData) {
     supplier_id: supplierId || null,
     platform_id: String(formData.get("platformId") ?? "") || null,
     name: String(formData.get("name") ?? "").trim(),
-    description: String(formData.get("description") ?? ""),
+    description: joinProductDescription(
+      String(formData.get("description") ?? ""),
+      String(formData.get("features") ?? ""),
+    ),
     wholesale_price: Number(formData.get("wholesalePrice") ?? 0),
     unit_price: unitPrice,
     bulk_qty: bulkQty,

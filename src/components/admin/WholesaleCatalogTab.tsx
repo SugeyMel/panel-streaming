@@ -12,7 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { RegisteredFlash } from "@/components/ui/RegisteredFlash";
 import { formatCurrency } from "@/lib/format";
 import type { Platform, Supplier, WholesaleCatalogProduct } from "@/lib/types";
-import { offerKindLabel, wholesalePricing } from "@/lib/wholesale";
+import { offerKindLabel, splitProductDescription, wholesalePricing } from "@/lib/wholesale";
 
 const field = "min-w-0 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-[#F8FAFC]";
 
@@ -344,7 +344,22 @@ function CatalogProductForm({
         ))}
       </select>
       <input name="name" defaultValue={product?.name} required placeholder="Nombre" className={field} />
-      <textarea name="description" defaultValue={product?.description} placeholder="Descripción" className={`${field} min-h-20`} />
+      <textarea
+        name="description"
+        defaultValue={splitProductDescription(product?.description).text}
+        placeholder="Descripción"
+        className={`${field} min-h-20`}
+      />
+      <label className="block text-xs text-[#94A3B8]">
+        Características (una por línea). Se muestran en la tarjeta del producto; las 3 primeras también como etiquetas.
+        Si lo dejas vacío, no se muestra esta sección.
+        <textarea
+          name="features"
+          defaultValue={splitProductDescription(product?.description).features.join("\n")}
+          placeholder={"Cuenta completa\nHasta 4 dispositivos\nPelículas y series en 4K"}
+          className={`${field} mt-1 min-h-24`}
+        />
+      </label>
       <SupplierProductImageField
         imageUrl={product?.imageUrl}
         includeFileName={false}

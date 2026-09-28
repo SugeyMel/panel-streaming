@@ -17,7 +17,35 @@ export type WholesalePricing = {
   fromPrice: number;
 };
 
-export type WholesaleFeatureKey = "account" | "devices" | "pin" | "quality" | "content" | "resale";
+export type WholesaleFeatureKey = "account" | "devices" | "pin" | "quality" | "content" | "resale" | "custom";
+
+/**
+ * Las características que escribe la administradora se guardan dentro de la descripción,
+ * después de esta marca (una por línea). Así no hace falta cambiar la base de datos.
+ */
+const FEATURES_MARKER = "[[caracteristicas]]";
+
+export function splitProductDescription(description: string | null | undefined) {
+  const raw = description ?? "";
+  const index = raw.indexOf(FEATURES_MARKER);
+  if (index < 0) return { text: raw.trim(), features: [] as string[] };
+  const features = raw
+    .slice(index + FEATURES_MARKER.length)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*\s]+/, "").trim())
+    .filter(Boolean);
+  return { text: raw.slice(0, index).trim(), features };
+}
+
+export function joinProductDescription(text: string, featuresText: string) {
+  const features = featuresText
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[-•*\s]+/, "").trim())
+    .filter(Boolean);
+  const clean = text.trim();
+  if (!features.length) return clean;
+  return `${clean}\n${FEATURES_MARKER}\n${features.join("\n")}`;
+}
 
 export function wholesalePricing(product: {
   wholesalePrice: number;
@@ -34,35 +62,17 @@ export function wholesalePricing(product: {
   return { unitPrice, packUnitPrice, bulkQty, hasPackDeal, fromPrice };
 }
 
+/** Textos de la tarjeta. Las características y etiquetas salen de lo que escribe la administradora en cada producto. */
 export function wholesaleCatalogCopy(kind: WholesaleOfferKind, description?: string) {
-  const trimmed = description?.trim() ?? "";
-  if (kind === "cuenta_completa") {
-    return {
-      badge: "CUENTA COMPLETA",
-      subtitle: trimmed || "Cuenta completa / Sin restricciones",
-      tags: ["4 dispositivos", "Perfil con PIN", "4K UHD"],
-      features: [
-        { key: "account" as const, label: "Cuenta completa" },
-        { key: "devices" as const, label: "Hasta 4 dispositivos" },
-        { key: "pin" as const, label: "Perfil con PIN" },
-        { key: "quality" as const, label: "Películas y series en 4K" },
-        { key: "content" as const, label: "Todo el contenido" },
-        { key: "resale" as const, label: "Ideal para uso personal o reventa" },
-      ],
-    };
-  }
+  const { text, features } = splitProductDescription(description);
+  const list = features.map((label) => ({ key: "custom" as WholesaleFeatureKey, label }));
+  const full = kind === "cuenta_completa";
   return {
-    badge: "PERFIL",
-    subtitle: trimmed || "Perfil / Sin restricciones",
-    tags: ["1 dispositivo", "Perfil con PIN", "HD"],
-    features: [
-      { key: "account" as const, label: "Perfil individual" },
-      { key: "devices" as const, label: "1 dispositivo" },
-      { key: "pin" as const, label: "Perfil con PIN" },
-      { key: "quality" as const, label: "Películas y series en HD" },
-      { key: "content" as const, label: "Todo el contenido" },
-      { key: "resale" as const, label: "Ideal para uso personal o reventa" },
-    ],
+    badge: full ? "CUENTA COMPLETA" : "PERFIL",
+    subtitle: text || (full ? "Cuenta completa" : "Perfil"),
+    text,
+    tags: features.slice(0, 3),
+    features: list,
   };
 }
 
