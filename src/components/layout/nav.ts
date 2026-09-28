@@ -25,13 +25,29 @@ export type NavItem = {
   href: string;
   label: string;
   icon: IconType;
+  /** Otras rutas que también marcan este botón como activo (ej. "Base de datos" = Clientes + Vendedores). */
+  also?: string[];
+};
+
+/** ¿El botón del menú está activo para la ruta actual? */
+export function navItemActive(item: NavItem, pathname: string, home: string) {
+  if (item.href === home) return pathname === item.href;
+  return pathname.startsWith(item.href) || (item.also ?? []).some((path) => pathname.startsWith(path));
+}
+
+/** "Base de datos" agrupa Clientes y Vendedores (excel de cuentas). */
+const baseDatosItem: NavItem = {
+  href: "/panel/clientes",
+  label: "Base de datos",
+  icon: UsersIcon,
+  also: ["/panel/vendedores"],
 };
 
 export const sellerPrimaryNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
+  { href: "/panel/correos", label: "Mi Bot", icon: MailIcon },
   { href: "/panel/productos", label: "Tienda", icon: ShoppingBagIcon },
-  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
-  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  baseDatosItem,
   { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
 ];
 
@@ -39,9 +55,9 @@ export const sellerPrimaryNav: NavItem[] = [
 export const sellerDesktopNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
+  { href: "/panel/correos", label: "Mi Bot", icon: MailIcon },
   { href: "/panel/productos", label: "Tienda", icon: ShoppingBagIcon },
-  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
-  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  baseDatosItem,
   { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
 ];
 
@@ -49,8 +65,8 @@ export const sellerDesktopNav: NavItem[] = [
 export const sellerMobileNav: NavItem[] = [
   { href: "/panel", label: "Consultas", icon: SearchIcon },
   { href: "/panel/cuentas", label: "Mis cuentas", icon: PlatformsIcon },
-  { href: "/panel/clientes", label: "Clientes", icon: UsersIcon },
-  { href: "/panel/vendedores", label: "Vendedores", icon: UsersIcon },
+  { href: "/panel/correos", label: "Mi Bot", icon: MailIcon },
+  { ...baseDatosItem, label: "Base datos" },
   { href: "/panel/pedidos", label: "Pedidos", icon: OrdersIcon },
 ];
 

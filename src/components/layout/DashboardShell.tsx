@@ -9,7 +9,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { AlertsBell, SellerBell, type HeaderAlert, type SellerBellAlert } from "@/components/layout/SellerBell";
 import { CustomerUserMenu } from "@/components/layout/CustomerUserMenu";
 import { SellerUserMenu } from "@/components/layout/SellerUserMenu";
-import { adminNav, customerNav, sellerDesktopNav, sellerNav } from "@/components/layout/nav";
+import { adminNav, customerNav, navItemActive, sellerDesktopNav, sellerNav } from "@/components/layout/nav";
 import { BellIcon, ChevronDownIcon, SearchIcon, WhatsAppIcon } from "@/components/icons";
 import { signOutAction } from "@/app/actions/business";
 import { DEFAULT_SUPPORT_HOURS } from "@/lib/types";
@@ -34,7 +34,6 @@ const sellerMoreItems: {
   disabled?: boolean;
 }[] = [
   { label: "Inventario", href: "/panel/inventario" },
-  { label: "Mi Bot", href: "/panel/correos" },
   { label: "Medios de pago", href: "/panel/configuracion" },
   { label: "Finanzas", href: "/panel/finanzas" },
   { label: "Reportes", disabled: true, hint: "Sin sección propia aún" },
@@ -96,9 +95,7 @@ export function DashboardShell({
       : "";
   const sellerMoreActive =
     sellerApp &&
-    !sellerDesktopNav.some((item) =>
-      item.href === home ? pathname === item.href : pathname.startsWith(item.href),
-    );
+    !sellerDesktopNav.some((item) => navItemActive(item, pathname, home));
   const adminFinanceActive = adminApp && pathname.startsWith("/admin/finanzas");
   const sellerLight = sellerApp && (pathname === "/panel/clientes" || pathname === "/panel/vendedores");
 
@@ -226,8 +223,7 @@ export function DashboardShell({
                 {sellerApp ? (
                   <nav className="hidden min-w-0 items-center gap-1 lg:flex">
                     {sellerDesktopNav.map((item) => {
-                      const active =
-                        item.href === home ? pathname === item.href : pathname.startsWith(item.href);
+                      const active = navItemActive(item, pathname, home);
                       return (
                         <Link
                           key={item.href}

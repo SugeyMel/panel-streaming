@@ -1,3 +1,4 @@
+import { BaseDatosTabs } from "@/components/panel/BaseDatosTabs";
 import { VendedoresTable } from "@/components/vendedores/VendedoresTable";
 import { loadMessageTemplates, loadPlatforms, loadStreamingAccounts, panelScope } from "@/lib/data/queries";
 
@@ -8,5 +9,10 @@ export default async function SellerVendedoresPage() {
     loadPlatforms(),
     loadStreamingAccounts(sellerId),
   ]);
-  return <VendedoresTable plantillas={plantillas} platforms={platforms} accounts={accounts} />;
+  return (
+    <>
+      <BaseDatosTabs active="vendedores" />
+      <VendedoresTable plantillas={plantillas} platforms={platforms} accounts={accounts} />
+    </>
+  );
 }

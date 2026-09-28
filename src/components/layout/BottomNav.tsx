@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { MenuIcon } from "@/components/icons";
-import { adminNav, customerNav, sellerMobileNav, type NavItem } from "@/components/layout/nav";
+import { adminNav, customerNav, navItemActive, sellerMobileNav, type NavItem } from "@/components/layout/nav";
 
 const adminPrimaryNav: NavItem[] = [adminNav[0], adminNav[1], adminNav[2]];
 
@@ -13,8 +13,8 @@ const homes = {
   customer: "/cliente",
 } as const;
 
-function isActive(pathname: string, href: string, home: string) {
-  return href === home ? pathname === href : pathname.startsWith(href);
+function isActive(pathname: string, item: NavItem, home: string) {
+  return navItemActive(item, pathname, home);
 }
 
 export function BottomNav({
@@ -37,11 +37,11 @@ export function BottomNav({
 
   const sellerMoreActive =
     variant === "seller" &&
-    (moreOpen || !sellerMobileNav.some((item) => isActive(pathname, item.href, home)));
+    (moreOpen || !sellerMobileNav.some((item) => isActive(pathname, item, home)));
 
   const adminMoreActive =
     variant === "admin" &&
-    (moreOpen || !adminPrimaryNav.some((item) => isActive(pathname, item.href, home)));
+    (moreOpen || !adminPrimaryNav.some((item) => isActive(pathname, item, home)));
 
   const light = variant === "seller" && (pathname === "/panel/clientes" || pathname === "/panel/vendedores");
 
@@ -87,7 +87,7 @@ function Tab({
   badge?: number;
   light?: boolean;
 }) {
-  const active = isActive(pathname, item.href, home);
+  const active = isActive(pathname, item, home);
   const Icon = item.icon;
   return (
     <Link

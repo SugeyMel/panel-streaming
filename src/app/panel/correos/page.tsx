@@ -1,4 +1,6 @@
 import { EmailCodesBoard } from "@/components/email/EmailCodesBoard";
+import { SellerAccessPromo } from "@/components/panel/SellerAccessPromo";
+import { loadAdminWhatsapp } from "@/lib/seller-permissions";
 import { loadEmailCodesBundle, loadPlatforms, panelScope, loadStreamingAccounts } from "@/lib/data/queries";
 import { isGoogleOAuthConfigured, isMicrosoftOAuthConfigured, oauthRedirectUri } from "@/lib/email-oauth-config";
 
@@ -11,13 +13,17 @@ export default async function SellerEmailsPage({
 }) {
   const { sellerId } = await panelScope();
   const { oauth } = await searchParams;
-  const [bundle, platforms, accounts] = await Promise.all([
+  const [bundle, platforms, accounts, adminWhatsapp] = await Promise.all([
     loadEmailCodesBundle(sellerId),
     loadPlatforms(),
     loadStreamingAccounts(sellerId),
+    loadAdminWhatsapp(),
   ]);
 
   return (
+    <div className="space-y-4">
+    {/* Crear acceso a clientes: planes por WhatsApp (el registro real de clientes llega en la siguiente fase). */}
+    <SellerAccessPromo platforms={platforms} adminWhatsapp={adminWhatsapp} />
     <EmailCodesBoard
       mode="seller"
       sellerId={sellerId}
@@ -32,5 +38,6 @@ export default async function SellerEmailsPage({
       oauthRedirects={{ google: oauthRedirectUri("google"), microsoft: oauthRedirectUri("microsoft") }}
       oauthResult={oauth}
     />
+    </div>
   );
 }
