@@ -61,9 +61,11 @@ export function CustomerTable({
           header: "Acciones",
           render: (row: CustomerRow) => (
             <div className="flex gap-2">
-              <Button href={hrefFor?.(row)} variant="ghost" className="h-8 px-3 py-1 text-xs">
-                Ver
-              </Button>
+              {hrefFor ? (
+                <Button href={hrefFor(row)} variant="ghost" className="h-8 px-3 py-1 text-xs">
+                  Ver
+                </Button>
+              ) : null}
               {onEdit ? (
                 <Button variant="ghost" className="h-8 px-3 py-1 text-xs" onClick={() => onEdit(row)}>
                   Editar

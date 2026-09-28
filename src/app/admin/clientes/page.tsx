@@ -9,7 +9,7 @@ export default async function AdminCustomersPage() {
     <div>
       <PageHeader title="Clientes" description="Todos los clientes de todos los vendedores." />
       <Card>
-        <CustomerTable rows={rows} showSeller hrefFor={() => `/admin/clientes`} />
+        <CustomerTable rows={rows} showSeller />
       </Card>
     </div>
   );
