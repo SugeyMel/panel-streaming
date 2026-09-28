@@ -98,7 +98,7 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
     <div>
       <PageHeader
         title="Clientes"
-        description="Todos los clientes. Los tuyos quedan como “Venta directa”. Al crear un cliente ya puede entrar con su celular."
+        description="Todos los clientes. Los tuyos quedan como “Venta directa”. Al crear un cliente ya puede entrar con su correo."
         action={
           <Button
             onClick={() => {
@@ -192,7 +192,7 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
             <input name="name" defaultValue={editing?.name ?? ""} required className={`${field} mt-1`} />
           </label>
           <label className="block text-sm text-[#CBD5E1]">
-            Celular (9 dígitos) — con este número entra a su panel
+            Celular / WhatsApp (9 dígitos)
             <input
               name="whatsapp"
               inputMode="numeric"
@@ -203,8 +203,15 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
             />
           </label>
           <label className="block text-sm text-[#CBD5E1]">
-            Correo (opcional)
-            <input name="email" type="email" defaultValue={editing?.email ?? ""} className={`${field} mt-1`} />
+            Correo — con este correo entra a su panel
+            <input
+              name="email"
+              type="email"
+              required
+              defaultValue={editing?.email ?? ""}
+              placeholder="cliente@gmail.com"
+              className={`${field} mt-1`}
+            />
           </label>
           <label className="block text-sm text-[#CBD5E1]">
             ¿De quién es este cliente?
