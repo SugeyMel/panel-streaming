@@ -1,16 +1,9 @@
-import { Card } from "@/components/ui/Card";
-import { CustomerTable } from "@/components/customers/CustomerTable";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { loadCustomerRows } from "@/lib/data/queries";
+import { AdminCustomersBoard } from "@/components/admin/AdminCustomersBoard";
+import { loadCustomerRows, loadSellers } from "@/lib/data/queries";
+
+export const dynamic = "force-dynamic";
 
 export default async function AdminCustomersPage() {
-  const rows = await loadCustomerRows();
-  return (
-    <div>
-      <PageHeader title="Clientes" description="Todos los clientes de todos los vendedores." />
-      <Card>
-        <CustomerTable rows={rows} showSeller />
-      </Card>
-    </div>
-  );
+  const [rows, sellers] = await Promise.all([loadCustomerRows(), loadSellers()]);
+  return <AdminCustomersBoard rows={rows} sellers={sellers} />;
 }

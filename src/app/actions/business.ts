@@ -179,6 +179,13 @@ export async function signInWithoutPasswordAction(formData: FormData) {
   if (role === "superadmin" || role === "support") {
     return { ok: false, error: "Las cuentas de administrador entran con correo y clave (Acceso administrador)." };
   }
+  if (role === "customer") {
+    // Cliente pausado (por la administradora o su vendedor): no puede entrar.
+    const { data: customerRows } = await admin.from("customers").select("status").eq("profile_id", userId);
+    if (customerRows && customerRows.length > 0 && customerRows.every((row) => row.status !== "active")) {
+      return { ok: false, error: "Tu acceso está pausado. Comunícate con tu vendedor." };
+    }
+  }
 
   const { data: link, error: linkError } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   const tokenHash = link?.properties?.hashed_token;
