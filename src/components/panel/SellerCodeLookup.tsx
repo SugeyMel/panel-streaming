@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { sellerLookupCodeAction } from "@/app/actions/email-codes";
 import { CheckIcon, CopyIcon, KeyIcon, MailIcon, SearchIcon } from "@/components/icons";
-import { PlatformLogo } from "@/components/ui/PlatformLogo";
+import { CustomerSquareLogo } from "@/components/cliente/CustomerSquareLogo";
 import { platformDisplayName } from "@/lib/platform-logos";
 import type { EmailLookupResult, Platform } from "@/lib/types";
 
@@ -121,7 +121,7 @@ export function SellerCodeLookup({
                         <CheckIcon className="h-3 w-3" />
                       </span>
                     ) : null}
-                    <PlatformLogo platform={platform} size={40} />
+                    <CustomerSquareLogo platform={platform} title={platformDisplayName(platform)} size={40} />
                     <span className="line-clamp-1 w-full">{platformDisplayName(platform)}</span>
                   </button>
                 );
