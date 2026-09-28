@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cancelWholesaleSaleAction, upsertWholesaleSaleAction } from "@/app/actions/business";
 import { AccountRowActions } from "@/components/accounts/AccountRowActions";
@@ -57,6 +57,9 @@ export function WholesaleSalesBoard({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<WholesaleSale | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  // Posición en pantalla del menú "⋮" (flota sobre la tabla para que no se corte).
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const lastClickRect = useRef<DOMRect | null>(null);
   const [filtros, setFiltros] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const platformNames = platforms.map((item) => platformDisplayName(item));
@@ -205,7 +208,13 @@ export function WholesaleSalesBoard({
                   <div className="px-2 py-3">
                     <HealthStatusBadge status={row.health} />
                   </div>
-                  <div className="relative flex items-center justify-end gap-0.5 border-l border-[#253047] px-2 py-2">
+                  <div
+                    className="relative flex items-center justify-end gap-0.5 border-l border-[#253047] px-2 py-2"
+                    onClickCapture={(event) => {
+                      const button = (event.target as HTMLElement).closest("button");
+                      lastClickRect.current = button ? button.getBoundingClientRect() : null;
+                    }}
+                  >
                     <AccountRowActions
                       whatsapp={
                         row.seller?.whatsapp
@@ -226,10 +235,31 @@ export function WholesaleSalesBoard({
                         setEditing(row.sale);
                         setOpen(true);
                       }}
-                      onMore={() => setMenu(menu === row.sale.id ? null : row.sale.id)}
+                      onMore={() => {
+                        if (menu === row.sale.id) {
+                          setMenu(null);
+                          return;
+                        }
+                        const rect = lastClickRect.current;
+                        const width = 160;
+                        const height = 84;
+                        const top = rect
+                          ? rect.bottom + height + 8 > window.innerHeight
+                            ? rect.top - height - 4
+                            : rect.bottom + 4
+                          : 80;
+                        const left = rect ? Math.max(8, rect.right - width) : 8;
+                        setMenuPos({ top, left });
+                        setMenu(row.sale.id);
+                      }}
                     />
-                    {menu === row.sale.id ? (
-                      <div className="absolute top-10 right-2 z-20 w-40 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs">
+                    {menu === row.sale.id && menuPos ? (
+                      <>
+                      <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} aria-hidden />
+                      <div
+                        className="fixed z-50 w-40 rounded-lg border border-[#253047] bg-[#111827] py-1 text-xs shadow-xl"
+                        style={{ top: menuPos.top, left: menuPos.left }}
+                      >
                         <button
                           type="button"
                           className="block w-full px-3 py-2 text-left hover:bg-[#172033]"
@@ -259,6 +289,7 @@ export function WholesaleSalesBoard({
                           </button>
                         </form>
                       </div>
+                      </>
                     ) : null}
                   </div>
                 </div>
