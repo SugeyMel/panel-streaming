@@ -1,3 +1,4 @@
+import { SellerAccessPromo } from "@/components/panel/SellerAccessPromo";
 import { SellerCodeLookup } from "@/components/panel/SellerCodeLookup";
 import { SellerWholesaleCatalog } from "@/components/panel/SellerWholesaleCatalog";
 import { loadAdminWhatsapp } from "@/lib/seller-permissions";
@@ -21,12 +22,15 @@ export default async function SellerConsultasPage({
 
   return (
     <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(0,62fr)_minmax(0,38fr)] lg:items-start">
-      <SellerCodeLookup
-        key={`${plataforma ?? ""}|${correo ?? ""}`}
-        platforms={platforms}
-        initialPlatformId={plataforma}
-        initialEmail={correo}
-      />
+      <div className="min-w-0 space-y-4">
+        <SellerCodeLookup
+          key={`${plataforma ?? ""}|${correo ?? ""}`}
+          platforms={platforms}
+          initialPlatformId={plataforma}
+          initialEmail={correo}
+        />
+        <SellerAccessPromo platforms={platforms} adminWhatsapp={adminWhatsapp} />
+      </div>
 
       <section className="@container min-w-0 rounded-2xl border border-[#253047] bg-[#0B111C] p-4 md:p-5">
         <h2 className="text-lg leading-tight font-bold text-[#F8FAFC] md:text-2xl">Productos disponibles</h2>
