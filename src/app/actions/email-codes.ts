@@ -501,13 +501,23 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     };
   }
 
-  const mailboxes = await loadConnectedEmails(service.sellerId);
-  const mailbox = mailboxes.find(
+  // Buzones del vendedor del cliente + buzones generales del administrador (sin vendedor asignado).
+  const serviceEmail = service.platformEmail.trim();
+  const allMailboxes = await loadConnectedEmails(undefined);
+  const usableMailboxes = allMailboxes.filter(
     (item) =>
+      (!item.sellerId || item.sellerId === service.sellerId) &&
       item.codesEnabled &&
-      mailboxMatchesService(item.email, service.platformEmail) &&
       (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(service.platformId)),
   );
+  // Igual que en el panel del vendedor: correo exacto, variante con "+" o dominio propio reenviado.
+  const directMailbox = usableMailboxes.find(
+    (item) =>
+      mailboxMatchesService(item.email, serviceEmail) ||
+      mailboxMatchesService(item.email, baseMailboxEmail(serviceEmail)),
+  );
+  const candidates = directMailbox ? [directMailbox] : isCustomDomainEmail(serviceEmail) ? usableMailboxes : [];
+  const mailbox = candidates[0];
 
   if (!service.platformEmail.trim() || !mailbox) {
     await recordLookup({
@@ -586,9 +596,19 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     };
   }
 
-  let live;
+  let live: Awaited<ReturnType<typeof readFilteredAccessCode>> | undefined;
   try {
-    live = await readFilteredAccessCode(mailbox, policy, platform);
+    for (const candidate of candidates) {
+      // Variante o reenviado: se busca el código enviado a esa dirección exacta.
+      const recipient = mailboxMatchesService(candidate.email, serviceEmail) ? undefined : serviceEmail;
+      const current = await readFilteredAccessCode(candidate, policy, platform, recipient);
+      if (current.status === "found") {
+        live = current;
+        break;
+      }
+      if (!live || live.status === "not_connected" || live.status === "reconnect") live = current;
+    }
+    if (!live) throw new Error("Sin buzón");
   } catch {
     await recordLookup({
       sellerId: service.sellerId,
