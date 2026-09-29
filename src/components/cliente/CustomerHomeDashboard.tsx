@@ -112,6 +112,7 @@ export function CustomerHomeDashboard({
   customerName,
   sellerName,
   sellerWhatsapp,
+  adminWhatsapp = "",
   services,
   orders,
   platforms,
@@ -120,6 +121,7 @@ export function CustomerHomeDashboard({
   customerName: string;
   sellerName: string;
   sellerWhatsapp: string;
+  adminWhatsapp?: string;
   services: Subscription[];
   orders: Order[];
   platforms: Platform[];
@@ -134,6 +136,13 @@ export function CustomerHomeDashboard({
   const recent = [...orders].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 6);
   const promos = featuredPromos(products, platforms);
   const mobilePromos = mobileFeaturedPromos(promos, products, platforms);
+  // Servicio desactivado: WhatsApp de la administradora con el pedido de activación.
+  const activateLink = (platformName: string, email: string) => {
+    const digits = (adminWhatsapp || sellerWhatsapp).replace(/\D/g, "");
+    if (!digits) return "";
+    const text = `Hola, quiero activar esta cuenta: ${platformName}${email ? ` - ${email}` : ""}`;
+    return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+  };
   const wa = sellerWhatsapp
     ? waLink(sellerWhatsapp, `Hola ${sellerName}, soy ${customerName}. Necesito ayuda con mi cuenta.`)
     : "";
@@ -251,7 +260,13 @@ export function CustomerHomeDashboard({
                                   : "bg-[#DC2626] text-white"
                             }`}
                           >
-                            {status === "activo" ? "Activo" : status === "proximo_a_vencer" ? "Por vencer" : "Vencido"}
+                            {status === "activo"
+                              ? "Activo"
+                              : status === "proximo_a_vencer"
+                                ? "Por vencer"
+                                : status === "suspendido"
+                                  ? "Desactivado"
+                                  : "Vencido"}
                           </span>
                         </div>
                         <p className="mt-1 truncate text-[11px] text-white/75">Plan: {planLabel(subscription, products)}</p>
@@ -261,6 +276,22 @@ export function CustomerHomeDashboard({
                         </p>
                       </div>
                     </div>
+                    {status === "suspendido" ? (
+                      <div className="mt-2.5 space-y-1.5">
+                        <p className="text-[11px] font-medium text-[#FBBF24]">Comunícate con tu proveedor de servicio</p>
+                        {activateLink(name, subscription.platformEmail) ? (
+                          <a
+                            href={activateLink(name, subscription.platformEmail)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[#16A34A] text-[11px] font-semibold text-white"
+                          >
+                            <WhatsAppIcon className="h-3.5 w-3.5" />
+                            Escribir por WhatsApp
+                          </a>
+                        ) : null}
+                      </div>
+                    ) : (
                     <div className="mt-2.5 grid grid-cols-3 gap-1.5">
                       <Link
                         href={`/cliente/servicios/${subscription.id}`}
@@ -287,6 +318,7 @@ export function CustomerHomeDashboard({
                         </Link>
                       )}
                     </div>
+                    )}
                   </article>
                 );
               })}

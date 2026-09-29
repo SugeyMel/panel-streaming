@@ -468,6 +468,14 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     };
   }
 
+  if (service.status === "suspendido") {
+    return {
+      type: "UNKNOWN_BLOCKED",
+      status: "DENIED",
+      message: "Este servicio está desactivado. Consulta con tu vendedor.",
+    };
+  }
+
   if (service.status === "vencido" || service.status === "cancelado") {
     await recordLookup({
       sellerId: service.sellerId,
@@ -723,7 +731,10 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
 
   if (live) {
     const assigned = ownAccounts.some(
-      (item) => item.assignedByAdmin && item.email.trim().toLowerCase() === email.toLowerCase(),
+      (item) =>
+        item.assignedByAdmin &&
+        item.status !== "inactive" &&
+        item.email.trim().toLowerCase() === email.toLowerCase(),
     );
     if (!assigned) return blocked("DENIED", "Esta cuenta no está asignada a tu panel.");
   }

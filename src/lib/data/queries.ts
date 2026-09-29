@@ -286,6 +286,7 @@ export type AdminAssignedAccount = {
   customerName: string | null;
   password: string;
   pin: string;
+  active: boolean;
 };
 
 /** Cuentas asignadas por el administrador (todas o de un vendedor). Solo para paneles admin. */
@@ -295,7 +296,7 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
   if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) return [];
   const admin = createServiceClient();
   if (!admin) return [];
-  const baseColumns = "id, seller_id, platform_id, email, password, label, expires_at, assigned_at";
+  const baseColumns = "id, seller_id, platform_id, email, password, label, status, expires_at, assigned_at";
   const run = (columns: string) => {
     let query = admin
       .from("streaming_accounts")
@@ -339,6 +340,7 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
     customerName: row.customer_id ? customerNames.get(String(row.customer_id)) ?? null : null,
     password: String(row.password ?? ""),
     pin: pins.get(String(row.id)) ?? "",
+    active: String(row.status ?? "") !== "inactive",
   }));
 }
 

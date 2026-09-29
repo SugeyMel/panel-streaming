@@ -1893,6 +1893,32 @@ export async function updateAssignedAccountAction(formData: FormData) {
   return { ok: true };
 }
 
+/** Administrador: desactiva (sin borrar) o reactiva una cuenta asignada. */
+export async function setAssignedAccountActiveAction(id: string, active: boolean) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["support"]);
+  const admin = createServiceClient();
+  if (!admin) return { ok: false, error: "Servicio no disponible." };
+  const { error } = await admin
+    .from("streaming_accounts")
+    .update({ status: active ? "available" : "inactive", updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("assigned_by_admin", true);
+  if (error) return { ok: false, error: error.message };
+  // Cliente directo: su servicio queda suspendido (no puede pedir códigos) hasta reactivarlo.
+  await admin
+    .from("services")
+    .update({ status: active ? "active" : "suspended" })
+    .eq("account_id", id)
+    .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+  revalidatePath("/admin/cuentas");
+  revalidatePath("/panel/cuentas");
+  revalidatePath("/cliente", "layout");
+  return { ok: true };
+}
+
 /** Administrador: quita una cuenta que había asignado. */
 export async function removeAssignedAccountAction(id: string) {
   const blocked = ensureLive();

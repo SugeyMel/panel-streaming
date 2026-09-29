@@ -35,10 +35,12 @@ export function SellerAccountsBoard({
   accounts,
   platforms,
   renewTargets,
+  adminWhatsapp = "",
 }: {
   accounts: StreamingAccount[];
   platforms: Platform[];
   renewTargets: RenewTarget[];
+  adminWhatsapp?: string;
 }) {
   const [query, setQuery] = useState("");
   const [platformDraft, setPlatformDraft] = useState("all");
@@ -110,7 +112,33 @@ export function SellerAccountsBoard({
     }
   }
 
+  function activateHref(account: StreamingAccount) {
+    const platform = platforms.find((item) => item.id === account.platformId);
+    const name = platform ? platformDisplayName(platform) : "";
+    const text = `Hola, quiero activar esta cuenta: ${name ? `${name} - ` : ""}${account.email} (ID ${accountCode(account)})`;
+    const digits = adminWhatsapp.replace(/\D/g, "");
+    return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}` : "";
+  }
+
   function renderActions(account: StreamingAccount) {
+    if (account.status === "inactive") {
+      const href = activateHref(account);
+      return (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <span className="text-xs text-[#FBBF24]">Comunícate con tu proveedor de servicio</span>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center rounded-lg bg-[#16A34A] px-2.5 text-xs font-semibold text-white hover:bg-[#15803D]"
+            >
+              WhatsApp
+            </a>
+          ) : null}
+        </div>
+      );
+    }
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <button
@@ -151,7 +179,9 @@ export function SellerAccountsBoard({
 
   function renderStatus(account: StreamingAccount) {
     if (account.status === "inactive") {
-      return <span className="text-xs font-semibold text-[#94A3B8]">Inactiva</span>;
+      return (
+        <span className="inline-flex rounded-full bg-[#475569] px-2 py-0.5 text-xs font-semibold text-white">Desactivada</span>
+      );
     }
     if (!account.expiresAt) return <span className="text-[#94A3B8]">—</span>;
     return <HealthStatusBadge status={estadoDesdeDias(diasDesdeVencimiento(account.expiresAt))} />;

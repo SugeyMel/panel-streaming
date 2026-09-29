@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   assignAccountToSellerAction,
   removeAssignedAccountAction,
+  setAssignedAccountActiveAction,
   updateAssignedAccountAction,
 } from "@/app/actions/business";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -65,10 +66,16 @@ export function AdminAccountAssign({
   }
 
   async function remove(id: string) {
-    if (!window.confirm("¿Quitar esta cuenta del vendedor?")) return;
+    if (!window.confirm("¿Eliminar esta cuenta? Se borra para siempre. Si solo quieres pausarla, usa Desactivar.")) return;
     const result = await removeAssignedAccountAction(id);
     if (result.ok) router.refresh();
-    else setMessage({ ok: false, text: result.error ?? "No se pudo quitar." });
+    else setMessage({ ok: false, text: result.error ?? "No se pudo eliminar." });
+  }
+
+  async function toggleActive(id: string, active: boolean) {
+    const result = await setAssignedAccountActiveAction(id, active);
+    if (result.ok) router.refresh();
+    else setMessage({ ok: false, text: result.error ?? "No se pudo cambiar el estado." });
   }
 
   return (
@@ -191,7 +198,12 @@ export function AdminAccountAssign({
             {assigned.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
                 <div className="min-w-0 space-y-1">
-                  <PlatformName platform={platforms.find((p) => p.id === item.platformId) ?? item.platformId} size="table" />
+                  <div className="flex items-center gap-2">
+                    <PlatformName platform={platforms.find((p) => p.id === item.platformId) ?? item.platformId} size="table" />
+                    {!item.active ? (
+                      <span className="rounded-full bg-[#475569] px-2 py-0.5 text-[10px] font-semibold text-white">Desactivada</span>
+                    ) : null}
+                  </div>
                   <p className="truncate text-[#F8FAFC]">{item.email}</p>
                   <p className="text-xs text-[#94A3B8]">
                     {item.sellerId === directSellerId && item.customerName
@@ -210,10 +222,21 @@ export function AdminAccountAssign({
                   </button>
                   <button
                     type="button"
-                    onClick={() => remove(item.id)}
-                    className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-red-400/50"
+                    onClick={() => toggleActive(item.id, !item.active)}
+                    className={`h-9 rounded-lg border px-3 text-xs font-semibold ${
+                      item.active
+                        ? "border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-400/70"
+                        : "border-emerald-400/40 bg-emerald-400/10 text-emerald-200 hover:border-emerald-400/70"
+                    }`}
                   >
-                    Quitar
+                    {item.active ? "Desactivar" : "Activar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(item.id)}
+                    className="h-9 rounded-lg border border-red-400/40 bg-red-500/10 px-3 text-xs font-semibold text-red-200 hover:border-red-400/70"
+                  >
+                    Eliminar
                   </button>
                 </div>
                 {editingId === item.id ? (
