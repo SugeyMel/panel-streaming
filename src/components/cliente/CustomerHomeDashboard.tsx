@@ -208,6 +208,13 @@ export function CustomerHomeDashboard({
           </div>
         </section>
 
+        <section className="grid grid-cols-4 gap-1.5">
+          <StatCard icon={PlatformsIcon} value={listed.length} label="Activos" tone="blue" />
+          <StatCard icon={ClockIcon} value={expiring.length} label="Por vencer" tone="orange" />
+          <StatCard icon={AlertIcon} value={pending.length} label="Pendiente" tone="red" />
+          <StatCard icon={ShoppingBagIcon} value={orders.length} label="Pedidos" tone="violet" />
+        </section>
+
         <section className="space-y-2">
           <SectionTitle href="/cliente/servicios">Mis servicios</SectionTitle>
           {listed.length === 0 ? (
@@ -285,13 +292,6 @@ export function CustomerHomeDashboard({
               })}
             </div>
           )}
-        </section>
-
-        <section className="grid grid-cols-4 gap-1.5">
-          <StatCard icon={PlatformsIcon} value={listed.length} label="Activos" tone="blue" />
-          <StatCard icon={ClockIcon} value={expiring.length} label="Por vencer" tone="orange" />
-          <StatCard icon={AlertIcon} value={pending.length} label="Pendiente" tone="red" />
-          <StatCard icon={ShoppingBagIcon} value={orders.length} label="Pedidos" tone="violet" />
         </section>
 
         {promos.length > 0 ? (
