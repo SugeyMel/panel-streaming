@@ -1665,6 +1665,17 @@ export async function assignAccountToSellerAction(formData: FormData) {
   const expiresAt = String(formData.get("expiresAt") ?? "").trim() || null;
   const label = saleKind === "full" ? "" : String(formData.get("label") ?? "").trim();
   const maxProfiles = saleKind === "full" ? 1 : Math.min(8, Math.max(1, Number(formData.get("maxProfiles") || 5)));
+  // Cliente directo (solo cuando el vendedor es "Venta directa").
+  const customerId = String(formData.get("customerId") ?? "").trim();
+  if (customerId) {
+    const { data: customer } = await admin
+      .from("customers")
+      .select("id")
+      .eq("id", customerId)
+      .eq("seller_id", sellerId)
+      .maybeSingle();
+    if (!customer) return { ok: false, error: "Ese cliente no pertenece a Venta directa." };
+  }
   const { error } = await admin.from("streaming_accounts").insert(
     pairs.map((pair) => ({
       seller_id: sellerId,
@@ -1678,9 +1689,15 @@ export async function assignAccountToSellerAction(formData: FormData) {
       expires_at: expiresAt,
       assigned_by_admin: true,
       assigned_at: now,
+      ...(customerId ? { customer_id: customerId } : {}),
     })),
   );
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (customerId && error.message.includes("customer_id")) {
+      return { ok: false, error: "Falta ejecutar la migración 0037 en Supabase para guardar el cliente." };
+    }
+    return { ok: false, error: error.message };
+  }
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
   return { ok: true, count: pairs.length };

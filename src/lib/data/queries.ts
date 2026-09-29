@@ -282,6 +282,8 @@ export type AdminAssignedAccount = {
   label: string;
   expiresAt: string | null;
   assignedAt: string | null;
+  customerId: string | null;
+  customerName: string | null;
 };
 
 /** Cuentas asignadas por el administrador (todas o de un vendedor). Solo para paneles admin. */
@@ -291,15 +293,28 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
   if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) return [];
   const admin = createServiceClient();
   if (!admin) return [];
-  let query = admin
-    .from("streaming_accounts")
-    .select("id, seller_id, platform_id, email, label, expires_at, assigned_at")
-    .eq("assigned_by_admin", true)
-    .order("assigned_at", { ascending: false });
-  if (sellerId) query = query.eq("seller_id", sellerId);
-  const { data, error } = await query;
+  const baseColumns = "id, seller_id, platform_id, email, label, expires_at, assigned_at";
+  const run = (columns: string) => {
+    let query = admin
+      .from("streaming_accounts")
+      .select(columns)
+      .eq("assigned_by_admin", true)
+      .order("assigned_at", { ascending: false });
+    if (sellerId) query = query.eq("seller_id", sellerId);
+    return query;
+  };
+  // Con cliente (si ya se ejecutó la migración 0037); si no, sin él para no ocultar las cuentas.
+  let { data, error } = await run(`${baseColumns}, customer_id`);
+  if (error) ({ data, error } = await run(baseColumns));
   if (error) return [];
-  return (data ?? []).map((row) => ({
+  const rows = (data ?? []) as unknown as Record<string, unknown>[];
+  const customerIds = [...new Set(rows.map((row) => row.customer_id).filter(Boolean).map(String))];
+  const customerNames = new Map<string, string>();
+  if (customerIds.length > 0) {
+    const { data: customerRows } = await admin.from("customers").select("id, name").in("id", customerIds);
+    for (const item of customerRows ?? []) customerNames.set(String(item.id), String(item.name ?? ""));
+  }
+  return rows.map((row) => ({
     id: String(row.id),
     sellerId: String(row.seller_id),
     platformId: String(row.platform_id),
@@ -307,6 +322,8 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
     label: String(row.label ?? ""),
     expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
     assignedAt: row.assigned_at ? String(row.assigned_at).slice(0, 10) : null,
+    customerId: row.customer_id ? String(row.customer_id) : null,
+    customerName: row.customer_id ? customerNames.get(String(row.customer_id)) ?? null : null,
   }));
 }
 

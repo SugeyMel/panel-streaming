@@ -16,15 +16,21 @@ export function AdminAccountAssign({
   sellers,
   platforms,
   assigned,
+  directSellerId = null,
+  directCustomers = [],
 }: {
   sellers: Seller[];
   platforms: Platform[];
   assigned: AdminAssignedAccount[];
+  directSellerId?: string | null;
+  directCustomers?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [bulk, setBulk] = useState(false);
   const [saleKind, setSaleKind] = useState<"full" | "profiles">("full");
+  const [sellerId, setSellerId] = useState("");
+  const isDirect = Boolean(directSellerId) && sellerId === directSellerId;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -37,6 +43,7 @@ export function AdminAccountAssign({
       const result = await assignAccountToSellerAction(new FormData(form));
       if (result.ok) {
         form.reset();
+        setSellerId("");
         const count = "count" in result && typeof result.count === "number" ? result.count : 1;
         setMessage({ ok: true, text: count > 1 ? `${count} cuentas asignadas al vendedor.` : "Cuenta asignada al vendedor." });
         router.refresh();
@@ -74,7 +81,13 @@ export function AdminAccountAssign({
           }
         />
         <form onSubmit={submit} className="grid gap-3 p-5 sm:grid-cols-2">
-          <select name="sellerId" required className={inputClass} defaultValue="">
+          <select
+            name="sellerId"
+            required
+            className={inputClass}
+            value={sellerId}
+            onChange={(event) => setSellerId(event.target.value)}
+          >
             <option value="" disabled>Vendedor</option>
             {sellers.map((seller) => (
               <option key={seller.id} value={seller.id}>{seller.name}</option>
@@ -86,6 +99,19 @@ export function AdminAccountAssign({
               <option key={platform.id} value={platform.id}>{platform.name}</option>
             ))}
           </select>
+          {isDirect ? (
+            <div className="sm:col-span-2">
+              <select name="customerId" required className={inputClass} defaultValue="">
+                <option value="" disabled>Cliente</option>
+                {directCustomers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>{customer.name}</option>
+                ))}
+              </select>
+              {directCustomers.length === 0 ? (
+                <p className="mt-1 text-xs text-[#94A3B8]">Aún no tienes clientes directos. Créalos en Clientes.</p>
+              ) : null}
+            </div>
+          ) : null}
           {bulk ? (
             <div className="sm:col-span-2">
               <textarea
@@ -145,7 +171,9 @@ export function AdminAccountAssign({
                   <PlatformName platform={platforms.find((p) => p.id === item.platformId) ?? item.platformId} size="table" />
                   <p className="truncate text-[#F8FAFC]">{item.email}</p>
                   <p className="text-xs text-[#94A3B8]">
-                    Vendedor: {sellers.find((s) => s.id === item.sellerId)?.name ?? "—"}
+                    {item.sellerId === directSellerId && item.customerName
+                      ? `Venta directa · Cliente: ${item.customerName}`
+                      : `Vendedor: ${sellers.find((s) => s.id === item.sellerId)?.name ?? "—"}`}
                     {item.expiresAt ? ` · Vence ${formatDdMmYyyy(item.expiresAt)}` : ""}
                   </p>
                 </div>
