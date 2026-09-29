@@ -349,10 +349,30 @@ function AccessCard({
           {result.code ? (
             <p className="mt-1 text-2xl font-semibold tracking-[0.2em] text-white">{result.code}</p>
           ) : null}
+          {result.status === "FOUND" && result.history && result.history.length > 1 ? (
+            <div className="mt-2 border-t border-white/10 pt-2">
+              <p className="text-[11px] font-medium text-[#94A3B8]">Códigos de los últimos 30 minutos</p>
+              <ul className="mt-1 space-y-1">
+                {result.history.map((item, index) => (
+                  <li key={`${item.code}-${index}`} className="flex items-center justify-between gap-2 text-[12px]">
+                    <span className="font-mono font-semibold tracking-[0.15em] text-white">{item.code}</span>
+                    <span className="text-[#94A3B8]" suppressHydrationWarning>
+                      {item.at ? codeAgeLabel(item.at) : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </article>
   );
+}
+
+function codeAgeLabel(at: number) {
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60000));
+  return minutes < 1 ? "recién llegado" : `hace ${minutes} min`;
 }
 
 function accountPasswordFromNotes(notes?: string) {
