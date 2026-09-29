@@ -1844,6 +1844,55 @@ export async function saveAdminWhatsappAction(formData: FormData) {
   return { ok: true };
 }
 
+/** Administrador: edita una cuenta asignada (correo, clave, perfil, vencimiento y PIN del cliente directo). */
+export async function updateAssignedAccountAction(formData: FormData) {
+  const blocked = ensureLive();
+  if (blocked) return blocked;
+  const session = await getAppSession();
+  requireRole(session, ["support"]);
+  const admin = createServiceClient();
+  if (!admin) return { ok: false, error: "Servicio no disponible." };
+  const id = String(formData.get("id") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "").trim();
+  const label = String(formData.get("label") ?? "").trim();
+  const expiresAt = String(formData.get("expiresAt") ?? "").trim() || null;
+  const pinMode = String(formData.get("pinMode") ?? "none");
+  const pin = pinMode === "pin" ? String(formData.get("pin") ?? "").trim() : "";
+  if (!id || !email) return { ok: false, error: "Escribe el correo de la cuenta." };
+  if (pinMode === "pin" && !pin) return { ok: false, error: "Escribe el PIN o elige \"No tiene PIN\"." };
+
+  const { error } = await admin
+    .from("streaming_accounts")
+    .update({ email, password, label, expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("assigned_by_admin", true);
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: "Ese correo ya está asignado en esa plataforma." };
+    return { ok: false, error: error.message };
+  }
+
+  // Si la cuenta es de un cliente directo, se actualiza también lo que ve en su panel.
+  const servicePatch: Record<string, unknown> = {
+    platform_email: email,
+    notes: password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${password}` : DIRECT_SERVICE_NOTE,
+    access_profile: label || null,
+  };
+  if (formData.has("pinMode")) servicePatch.access_password = pin || null;
+  if (expiresAt) servicePatch.end_date = expiresAt;
+  const { error: serviceError } = await admin
+    .from("services")
+    .update(servicePatch)
+    .eq("account_id", id)
+    .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+  if (serviceError) return { ok: false, error: `Cuenta guardada, pero no se actualizó el panel del cliente: ${serviceError.message}` };
+
+  revalidatePath("/admin/cuentas");
+  revalidatePath("/panel/cuentas");
+  revalidatePath("/cliente", "layout");
+  return { ok: true };
+}
+
 /** Administrador: quita una cuenta que había asignado. */
 export async function removeAssignedAccountAction(id: string) {
   const blocked = ensureLive();

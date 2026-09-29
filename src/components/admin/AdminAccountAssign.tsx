@@ -2,7 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { assignAccountToSellerAction, removeAssignedAccountAction } from "@/app/actions/business";
+import {
+  assignAccountToSellerAction,
+  removeAssignedAccountAction,
+  updateAssignedAccountAction,
+} from "@/app/actions/business";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { PlatformName } from "@/components/ui/PlatformLogo";
 import { formatDdMmYyyy } from "@/lib/cuenta-salud";
@@ -33,6 +37,7 @@ export function AdminAccountAssign({
   const [pinMode, setPinMode] = useState<"none" | "pin">("none");
   const isDirect = Boolean(directSellerId) && sellerId === directSellerId;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -195,18 +200,95 @@ export function AdminAccountAssign({
                     {item.expiresAt ? ` · Vence ${formatDdMmYyyy(item.expiresAt)}` : ""}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => remove(item.id)}
-                  className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-red-400/50"
-                >
-                  Quitar
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingId(editingId === item.id ? null : item.id)}
+                    className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-violet-400/50"
+                  >
+                    {editingId === item.id ? "Cerrar" : "Editar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(item.id)}
+                    className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-red-400/50"
+                  >
+                    Quitar
+                  </button>
+                </div>
+                {editingId === item.id ? (
+                  <EditAssignedForm
+                    item={item}
+                    onDone={() => {
+                      setEditingId(null);
+                      router.refresh();
+                    }}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
         )}
       </Card>
     </div>
+  );
+}
+
+function EditAssignedForm({ item, onDone }: { item: AdminAssignedAccount; onDone: () => void }) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pinMode, setPinMode] = useState<"none" | "pin">(item.pin ? "pin" : "none");
+  const isCustomer = Boolean(item.customerId);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending) return;
+    setPending(true);
+    setError(null);
+    try {
+      const result = await updateAssignedAccountAction(new FormData(event.currentTarget));
+      if (result.ok) onDone();
+      else setError(result.error ?? "No se pudo guardar.");
+    } catch {
+      setError("No se pudo guardar. Inténtalo de nuevo.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="grid w-full gap-2 rounded-xl border border-[#253047] bg-[#0B111C] p-3 sm:grid-cols-2">
+      <input type="hidden" name="id" value={item.id} />
+      <input name="email" required defaultValue={item.email} placeholder="Correo de la cuenta" className={inputClass} />
+      <input name="password" defaultValue={item.password} placeholder="Clave de la cuenta" className={inputClass} />
+      <input name="label" defaultValue={item.label} placeholder="Nombre del perfil (opcional)" className={inputClass} />
+      <input name="expiresAt" type="date" defaultValue={item.expiresAt ?? ""} className={inputClass} />
+      {isCustomer ? (
+        <>
+          <select
+            name="pinMode"
+            value={pinMode}
+            onChange={(event) => setPinMode(event.target.value === "pin" ? "pin" : "none")}
+            className={inputClass}
+          >
+            <option value="none">No tiene PIN</option>
+            <option value="pin">Tiene PIN</option>
+          </select>
+          {pinMode === "pin" ? (
+            <input name="pin" required inputMode="numeric" defaultValue={item.pin} placeholder="PIN del perfil" className={inputClass} />
+          ) : null}
+        </>
+      ) : null}
+      <div className="flex items-center gap-3 sm:col-span-2">
+        <button
+          type="submit"
+          disabled={pending}
+          className="h-10 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#22D3EE] px-5 text-sm font-semibold text-white hover:brightness-110 disabled:opacity-60"
+        >
+          {pending ? "Guardando..." : "Guardar cambios"}
+        </button>
+        {error ? <span className="text-sm text-red-300">{error}</span> : null}
+      </div>
+    </form>
   );
 }

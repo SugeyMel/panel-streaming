@@ -284,6 +284,8 @@ export type AdminAssignedAccount = {
   assignedAt: string | null;
   customerId: string | null;
   customerName: string | null;
+  password: string;
+  pin: string;
 };
 
 /** Cuentas asignadas por el administrador (todas o de un vendedor). Solo para paneles admin. */
@@ -293,7 +295,7 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
   if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) return [];
   const admin = createServiceClient();
   if (!admin) return [];
-  const baseColumns = "id, seller_id, platform_id, email, label, expires_at, assigned_at";
+  const baseColumns = "id, seller_id, platform_id, email, password, label, expires_at, assigned_at";
   const run = (columns: string) => {
     let query = admin
       .from("streaming_accounts")
@@ -314,6 +316,17 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
     const { data: customerRows } = await admin.from("customers").select("id, name").in("id", customerIds);
     for (const item of customerRows ?? []) customerNames.set(String(item.id), String(item.name ?? ""));
   }
+  // PIN de las cuentas dadas a clientes directos (se guarda en su servicio).
+  const pins = new Map<string, string>();
+  const directIds = rows.filter((row) => row.customer_id).map((row) => String(row.id));
+  if (directIds.length > 0) {
+    const { data: serviceRows } = await admin
+      .from("services")
+      .select("account_id, access_password")
+      .in("account_id", directIds)
+      .like("notes", "Cuenta asignada por la administradora%");
+    for (const item of serviceRows ?? []) pins.set(String(item.account_id), String(item.access_password ?? ""));
+  }
   return rows.map((row) => ({
     id: String(row.id),
     sellerId: String(row.seller_id),
@@ -324,6 +337,8 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
     assignedAt: row.assigned_at ? String(row.assigned_at).slice(0, 10) : null,
     customerId: row.customer_id ? String(row.customer_id) : null,
     customerName: row.customer_id ? customerNames.get(String(row.customer_id)) ?? null : null,
+    password: String(row.password ?? ""),
+    pin: pins.get(String(row.id)) ?? "",
   }));
 }
 
