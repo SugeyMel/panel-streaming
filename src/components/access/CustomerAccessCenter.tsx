@@ -277,7 +277,9 @@ function AccessCard({
         {fields.map((field) => {
           const copyKey = `${subscription.id}:${field.key}`;
           const display =
-            field.secret && field.value && !revealed ? "••••••••" : field.value || "—";
+            field.secret && field.value && !revealed
+              ? "••••••••"
+              : field.value || (field.key === "pin" ? "No tiene" : "—");
           return (
             <div key={field.key} className="rounded-xl border border-white/10 bg-black/25 px-2.5 py-2">
               <p className="inline-flex items-center gap-1 text-[10px] text-white/50">

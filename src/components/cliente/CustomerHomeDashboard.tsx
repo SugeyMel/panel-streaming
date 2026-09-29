@@ -7,14 +7,10 @@ import {
   ChevronRightIcon,
   ClockIcon,
   CrownIcon,
-  KeyIcon,
-  OrdersIcon,
   PlatformsIcon,
   PlayIcon,
-  SettingsIcon,
   ShieldIcon,
   ShoppingBagIcon,
-  SupportIcon,
   WhatsAppIcon,
 } from "@/components/icons";
 import { CustomerSquareLogo, customerBrandSurfaceStyle } from "@/components/cliente/CustomerSquareLogo";
@@ -212,15 +208,6 @@ export function CustomerHomeDashboard({
           </div>
         </section>
 
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <StatCard icon={PlatformsIcon} value={listed.length} label="Servicios activos" tone="blue" />
-          <StatCard icon={ClockIcon} value={expiring.length} label="Por vencer" tone="orange" />
-          <StatCard icon={AlertIcon} value={pending.length} label="Pendiente" tone="red" />
-          <StatCard icon={ShoppingBagIcon} value={orders.length} label="Pedidos totales" tone="violet" />
-        </section>
-
-        <QuickAccess className="lg:hidden" />
-
         <section className="space-y-2">
           <SectionTitle href="/cliente/servicios">Mis servicios</SectionTitle>
           {listed.length === 0 ? (
@@ -267,12 +254,18 @@ export function CustomerHomeDashboard({
                         </p>
                       </div>
                     </div>
-                    <div className="mt-2.5 grid grid-cols-2 gap-1.5">
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5">
                       <Link
                         href={`/cliente/servicios/${subscription.id}`}
                         className="inline-flex h-8 items-center justify-center rounded-lg border border-white/15 bg-black/20 text-[11px] font-medium text-[#E2E8F0]"
                       >
                         Ver detalles
+                      </Link>
+                      <Link
+                        href="/cliente/acceso"
+                        className="inline-flex h-8 items-center justify-center rounded-lg border border-[#38BDF8]/40 bg-[#38BDF8]/15 text-[11px] font-medium text-[#BAE6FD]"
+                      >
+                        Solicitar código
                       </Link>
                       {subscription.renewalIntent === "decline" ? (
                         <span className="inline-flex h-8 items-center justify-center rounded-lg text-[11px] text-white/60">
@@ -292,6 +285,13 @@ export function CustomerHomeDashboard({
               })}
             </div>
           )}
+        </section>
+
+        <section className="grid grid-cols-4 gap-1.5">
+          <StatCard icon={PlatformsIcon} value={listed.length} label="Activos" tone="blue" />
+          <StatCard icon={ClockIcon} value={expiring.length} label="Por vencer" tone="orange" />
+          <StatCard icon={AlertIcon} value={pending.length} label="Pendiente" tone="red" />
+          <StatCard icon={ShoppingBagIcon} value={orders.length} label="Pedidos" tone="violet" />
         </section>
 
         {promos.length > 0 ? (
@@ -408,7 +408,6 @@ export function CustomerHomeDashboard({
             <ArrowRightIcon className="h-3.5 w-3.5" />
           </span>
         </Link>
-        <QuickAccess />
         {wa ? (
           <a
             href={wa}
@@ -552,46 +551,14 @@ function StatCard({
     violet: "text-[#C4B5FD] bg-[#8B5CF6]/12 border-[#8B5CF6]/25",
   }[tone];
   return (
-    <div className={`flex items-center gap-2 rounded-2xl border bg-[#111827] px-2.5 py-2 ${colors}`}>
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-black/20">
-        <Icon className="h-4 w-4" />
+    <div className={`flex min-w-0 items-center gap-1.5 rounded-xl border bg-[#111827] px-2 py-1.5 ${colors}`}>
+      <span className="hidden h-6 w-6 shrink-0 place-items-center rounded-lg bg-black/20 sm:grid">
+        <Icon className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0">
-        <p className="text-lg font-bold leading-none text-white">{value}</p>
-        <p className="mt-0.5 truncate text-[10px] font-medium text-[#94A3B8]">{label}</p>
+        <p className="text-sm font-bold leading-none text-white">{value}</p>
+        <p className="mt-0.5 truncate text-[9px] font-medium text-[#94A3B8] sm:text-[10px]">{label}</p>
       </div>
     </div>
-  );
-}
-
-function QuickAccess({ className = "" }: { className?: string }) {
-  const items = [
-    { href: "/cliente/acceso", label: "Solicitar código", icon: KeyIcon, tone: "text-[#38BDF8] bg-[#38BDF8]/15" },
-    { href: "/cliente/pedidos", label: "Mis pedidos", icon: OrdersIcon, tone: "text-[#A78BFA] bg-[#8B5CF6]/15" },
-    { href: "/cliente/soporte", label: "Centro de ayuda", icon: SupportIcon, tone: "text-[#FBBF24] bg-[#F59E0B]/15" },
-    { href: "/cliente/cuenta", label: "Mi cuenta", icon: SettingsIcon, tone: "text-[#4ADE80] bg-[#22C55E]/15" },
-  ] as const;
-  return (
-    <section className={`rounded-2xl border border-[#253047] bg-[#111827] p-2.5 ${className}`}>
-      <p className="mb-1.5 px-1 text-[11px] font-semibold text-white">Accesos rápidos</p>
-      <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
-        {items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-[#172033]"
-            >
-              <span className={`grid h-7 w-7 place-items-center rounded-lg ${item.tone}`}>
-                <Icon className="h-3.5 w-3.5" />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-[#E2E8F0]">{item.label}</span>
-              <ChevronRightIcon className="h-3.5 w-3.5 text-[#64748B]" />
-            </Link>
-          );
-        })}
-      </div>
-    </section>
   );
 }

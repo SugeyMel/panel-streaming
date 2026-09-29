@@ -30,6 +30,7 @@ export function AdminAccountAssign({
   const [bulk, setBulk] = useState(false);
   const [saleKind, setSaleKind] = useState<"full" | "profiles">("full");
   const [sellerId, setSellerId] = useState("");
+  const [pinMode, setPinMode] = useState<"none" | "pin">("none");
   const isDirect = Boolean(directSellerId) && sellerId === directSellerId;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -44,6 +45,7 @@ export function AdminAccountAssign({
       if (result.ok) {
         form.reset();
         setSellerId("");
+        setPinMode("none");
         const count = "count" in result && typeof result.count === "number" ? result.count : 1;
         setMessage({ ok: true, text: count > 1 ? `${count} cuentas asignadas al vendedor.` : "Cuenta asignada al vendedor." });
         router.refresh();
@@ -142,6 +144,22 @@ export function AdminAccountAssign({
           </select>
           {saleKind === "profiles" ? (
             <input name="label" placeholder="Nombre del perfil (opcional)" className={inputClass} />
+          ) : null}
+          {isDirect ? (
+            <>
+              <select
+                name="pinMode"
+                value={pinMode}
+                onChange={(event) => setPinMode(event.target.value === "pin" ? "pin" : "none")}
+                className={inputClass}
+              >
+                <option value="none">No tiene PIN</option>
+                <option value="pin">Tiene PIN</option>
+              </select>
+              {pinMode === "pin" ? (
+                <input name="pin" required inputMode="numeric" placeholder="PIN del perfil" className={inputClass} />
+              ) : null}
+            </>
           ) : null}
           <input name="expiresAt" type="date" className={inputClass} />
           <div className="sm:col-span-2">

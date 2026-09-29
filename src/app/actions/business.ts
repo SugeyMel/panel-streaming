@@ -1676,7 +1676,12 @@ export async function assignAccountToSellerAction(formData: FormData) {
       .maybeSingle();
     if (!customer) return { ok: false, error: "Ese cliente no pertenece a Venta directa." };
   }
-  const { error } = await admin.from("streaming_accounts").insert(
+  // PIN del perfil (solo cliente directo): "none" = no tiene.
+  const pin = customerId && String(formData.get("pinMode") ?? "none") === "pin" ? String(formData.get("pin") ?? "").trim() : "";
+  if (customerId && String(formData.get("pinMode") ?? "none") === "pin" && !pin) {
+    return { ok: false, error: "Escribe el PIN del perfil o elige \"No tiene PIN\"." };
+  }
+  const { data: insertedAccounts, error } = await admin.from("streaming_accounts").insert(
     pairs.map((pair) => ({
       seller_id: sellerId,
       platform_id: platformId,
@@ -1691,7 +1696,7 @@ export async function assignAccountToSellerAction(formData: FormData) {
       assigned_at: now,
       ...(customerId ? { customer_id: customerId } : {}),
     })),
-  );
+  ).select("id");
   if (error) {
     if (customerId && error.message.includes("customer_id")) {
       return { ok: false, error: "Falta ejecutar la migración 0037 en Supabase para guardar el cliente." };
@@ -1700,7 +1705,8 @@ export async function assignAccountToSellerAction(formData: FormData) {
   }
   if (customerId) {
     // Para que el cliente vea la cuenta en su panel, se crea su servicio.
-    const synced = await syncDirectCustomerServices(admin);
+    const pins = new Map((insertedAccounts ?? []).map((item) => [String(item.id), pin]));
+    const synced = await syncDirectCustomerServices(admin, pins);
     if (!synced.ok) return { ok: false, error: `Cuenta asignada, pero no se pudo mostrar al cliente: ${synced.error}` };
     revalidatePath("/cliente", "layout");
   }
@@ -1715,7 +1721,12 @@ type ServiceAdminClient = NonNullable<ReturnType<typeof createServiceClient>>;
  * Cuentas que la administradora asignó a un cliente directo → servicio del cliente
  * (así aparecen en su panel). Solo crea los que faltan, se puede llamar varias veces.
  */
-async function syncDirectCustomerServices(admin: ServiceAdminClient): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
+const DIRECT_SERVICE_NOTE = "Cuenta asignada por la administradora";
+
+async function syncDirectCustomerServices(
+  admin: ServiceAdminClient,
+  pins: Map<string, string> = new Map(),
+): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
   const { data: accounts, error } = await admin
     .from("streaming_accounts")
     .select("id, seller_id, platform_id, customer_id, email, password, label, expires_at, assigned_at")
@@ -1789,10 +1800,11 @@ async function syncDirectCustomerServices(admin: ServiceAdminClient): Promise<{ 
       cost_price: 0,
       sale_price: 0,
       status: "active",
-      notes: "Cuenta asignada por la administradora",
+      // La clave de la cuenta va en notas ("Clave de la cuenta: ...") y el PIN en access_password.
+      notes: account.password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${String(account.password)}` : DIRECT_SERVICE_NOTE,
       platform_email: String(account.email ?? "") || null,
       account_id: String(account.id),
-      access_password: String(account.password ?? "") || null,
+      access_password: pins.get(String(account.id)) || null,
       access_profile: String(account.label ?? "") || null,
     });
     if (insertError) return { ok: false, error: insertError.message };
@@ -1841,7 +1853,7 @@ export async function removeAssignedAccountAction(id: string) {
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
   // Si era de un cliente directo, también se quita de su panel.
-  await admin.from("services").delete().eq("account_id", id).eq("notes", "Cuenta asignada por la administradora");
+  await admin.from("services").delete().eq("account_id", id).like("notes", "Cuenta asignada por la administradora%");
   const { error } = await admin
     .from("streaming_accounts")
     .delete()
