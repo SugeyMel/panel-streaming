@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -14,19 +15,42 @@ import { ConfirmationDialog, Modal } from "@/components/ui/Modal";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { CustomerStatusBadge } from "@/components/ui/StatusBadge";
 import { whatsappParaMostrar } from "@/lib/clientes";
-import { formatDate } from "@/lib/format";
+import { formatDate, serviceStatusFromDates } from "@/lib/format";
 import type { CustomerRow } from "@/lib/selectors";
-import type { Seller } from "@/lib/types";
+import type { Platform, Seller, Subscription } from "@/lib/types";
 
 const field =
   "h-11 w-full rounded-xl border border-[#253047] bg-[#0B111C] px-3 text-sm text-white outline-none placeholder:text-[#64748B] focus:border-violet-400/50";
 
-export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; sellers: Seller[] }) {
+const SERVICE_STATUS: Record<string, { label: string; className: string }> = {
+  activo: { label: "Activo", className: "bg-[#16A34A] text-white" },
+  proximo_a_vencer: { label: "Por vencer", className: "bg-[#F59E0B] text-[#1C1917]" },
+  vencido: { label: "Vencido", className: "bg-[#DC2626] text-white" },
+  suspendido: { label: "Desactivado", className: "bg-[#475569] text-white" },
+  cancelado: { label: "Cancelado", className: "bg-[#7F1D1D] text-white" },
+};
+
+export function AdminCustomersBoard({
+  rows,
+  sellers,
+  services = [],
+  platforms = [],
+}: {
+  rows: CustomerRow[];
+  sellers: Seller[];
+  services?: Subscription[];
+  platforms?: Platform[];
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerRow | null>(null);
   const [deleting, setDeleting] = useState<CustomerRow | null>(null);
+  const [viewing, setViewing] = useState<CustomerRow | null>(null);
+  const servicesOf = (customerId: string) =>
+    services
+      .filter((item) => item.customerId === customerId && item.status !== "cancelado")
+      .sort((a, b) => a.endDate.localeCompare(b.endDate));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -98,7 +122,7 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
     <div>
       <PageHeader
         title="Clientes"
-        description="Todos los clientes. Los tuyos quedan como “Venta directa”. Al crear un cliente ya puede entrar con su correo."
+        description="Aquí gestionas a las personas: crear, editar, bloquear su acceso o eliminarlas. Sus cuentas se gestionan en “Cuentas asignadas”."
         action={
           <Button
             onClick={() => {
@@ -132,7 +156,24 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
             { key: "seller", header: "Vendedor", render: (row) => row.sellerName ?? "—" },
             { key: "whatsapp", header: "Celular", render: (row) => whatsappParaMostrar(row.whatsapp) },
             { key: "email", header: "Correo", render: (row) => row.email || "—" },
-            { key: "active", header: "Servicios activos", render: (row) => row.activeServices },
+            {
+              key: "active",
+              header: "Servicios",
+              render: (row) => {
+                const count = servicesOf(row.id).length;
+                return count === 0 ? (
+                  <span className="text-[#64748B]">0</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setViewing(row)}
+                    className="font-medium text-[#C4B5FD] hover:underline"
+                  >
+                    {count} · Ver
+                  </button>
+                );
+              },
+            },
             {
               key: "next",
               header: "Próximo vencimiento",
@@ -160,7 +201,7 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
                     disabled={pending}
                     onClick={() => togglePause(row)}
                   >
-                    {row.status === "activo" ? "Pausar" : "Reactivar"}
+                    {row.status === "activo" ? "Bloquear acceso" : "Desbloquear"}
                   </Button>
                   <Button
                     variant="ghost"
@@ -242,10 +283,45 @@ export function AdminCustomersBoard({ rows, sellers }: { rows: CustomerRow[]; se
         </form>
       </Modal>
 
+      <Modal open={Boolean(viewing)} title={`Servicios de ${viewing?.name ?? ""}`} onClose={() => setViewing(null)}>
+        {viewing ? (
+          <div className="space-y-2">
+            {servicesOf(viewing.id).map((item) => {
+              const platform = platforms.find((p) => p.id === item.platformId);
+              const status = SERVICE_STATUS[serviceStatusFromDates(item.endDate, item.status)] ?? SERVICE_STATUS.activo;
+              return (
+                <div key={item.id} className="rounded-xl border border-[#253047] bg-[#0B111C] px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold text-white">{platform?.name ?? "Servicio"}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${status.className}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                  <p className="truncate text-[#CBD5E1]">{item.platformEmail || "—"}</p>
+                  <p className="text-xs text-[#94A3B8]">
+                    {item.accessProfile ? `Perfil: ${item.accessProfile} · ` : ""}Vence {formatDate(item.endDate)}
+                  </p>
+                </div>
+              );
+            })}
+            {viewing.sellerId === directSeller?.id ? (
+              <Link
+                href={`/admin/cuentas?cliente=${viewing.id}`}
+                className="mt-2 inline-flex h-10 w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#22D3EE] text-sm font-semibold text-white"
+              >
+                Gestionar en Cuentas asignadas
+              </Link>
+            ) : (
+              <p className="pt-1 text-xs text-[#94A3B8]">Estos servicios los gestiona su vendedor.</p>
+            )}
+          </div>
+        ) : null}
+      </Modal>
+
       <ConfirmationDialog
         open={Boolean(deleting)}
         title="Eliminar cliente"
-        description={`¿Seguro que quieres eliminar a ${deleting?.name ?? "este cliente"}? Esto no se puede deshacer. Si tiene servicios o pedidos, no se eliminará: en ese caso usa "Pausar".`}
+        description={`¿Seguro que quieres eliminar a ${deleting?.name ?? "este cliente"}? Esto no se puede deshacer. Si tiene servicios o pedidos, no se eliminará: en ese caso usa "Bloquear acceso".`}
         confirmLabel="Sí, eliminar"
         onConfirm={confirmDelete}
         onClose={() => setDeleting(null)}

@@ -5,7 +5,12 @@ import { loadAdminAssignedAccounts, loadCustomers, loadPlatforms, loadSellers } 
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminAssignedAccountsPage() {
+export default async function AdminAssignedAccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cliente?: string }>;
+}) {
+  const { cliente } = await searchParams;
   // Pasa al panel del cliente las cuentas directas que aún no se ven ahí (ej. asignadas antes de este cambio).
   await syncDirectCustomerServicesAction().catch(() => null);
   const [sellers, platforms, assigned] = await Promise.all([
@@ -20,13 +25,17 @@ export default async function AdminAssignedAccountsPage() {
     : [];
   return (
     <div>
-      <PageHeader title="Cuentas asignadas" description="Asigna cuentas concretas a tus vendedores." />
+      <PageHeader
+        title="Cuentas asignadas"
+        description="Aquí gestionas las cuentas: asignar, editar, desactivar o eliminar, a vendedores o a tus clientes directos."
+      />
       <AdminAccountAssign
         sellers={sellers}
         platforms={platforms}
         assigned={assigned}
         directSellerId={directSeller?.id ?? null}
         directCustomers={directCustomers}
+        filterCustomerId={cliente ?? null}
       />
     </div>
   );

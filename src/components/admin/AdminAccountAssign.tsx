@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -23,12 +24,14 @@ export function AdminAccountAssign({
   assigned,
   directSellerId = null,
   directCustomers = [],
+  filterCustomerId = null,
 }: {
   sellers: Seller[];
   platforms: Platform[];
   assigned: AdminAssignedAccount[];
   directSellerId?: string | null;
   directCustomers?: { id: string; name: string }[];
+  filterCustomerId?: string | null;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -39,6 +42,11 @@ export function AdminAccountAssign({
   const isDirect = Boolean(directSellerId) && sellerId === directSellerId;
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Desde Clientes → "Ver cuentas": solo las cuentas de ese cliente.
+  const shown = filterCustomerId ? assigned.filter((item) => item.customerId === filterCustomerId) : assigned;
+  const filterName = filterCustomerId
+    ? directCustomers.find((item) => item.id === filterCustomerId)?.name ?? "este cliente"
+    : null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -190,12 +198,25 @@ export function AdminAccountAssign({
       </Card>
 
       <Card>
-        <CardHeader title="Cuentas asignadas" description={`${assigned.length} en total`} />
-        {assigned.length === 0 ? (
+        <CardHeader
+          title={filterName ? `Cuentas de ${filterName}` : "Cuentas asignadas"}
+          description={`${shown.length} en total`}
+          action={
+            filterCustomerId ? (
+              <Link
+                href="/admin/cuentas"
+                className="inline-flex h-9 items-center rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-violet-400/50"
+              >
+                Ver todas
+              </Link>
+            ) : undefined
+          }
+        />
+        {shown.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">Aún no has asignado cuentas.</p>
         ) : (
           <ul className="divide-y divide-[#253047]">
-            {assigned.map((item) => (
+            {shown.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
