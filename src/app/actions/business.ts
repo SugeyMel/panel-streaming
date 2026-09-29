@@ -1698,9 +1698,119 @@ export async function assignAccountToSellerAction(formData: FormData) {
     }
     return { ok: false, error: error.message };
   }
+  if (customerId) {
+    // Para que el cliente vea la cuenta en su panel, se crea su servicio.
+    const synced = await syncDirectCustomerServices(admin);
+    if (!synced.ok) return { ok: false, error: `Cuenta asignada, pero no se pudo mostrar al cliente: ${synced.error}` };
+    revalidatePath("/cliente", "layout");
+  }
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
   return { ok: true, count: pairs.length };
+}
+
+type ServiceAdminClient = NonNullable<ReturnType<typeof createServiceClient>>;
+
+/**
+ * Cuentas que la administradora asignó a un cliente directo → servicio del cliente
+ * (así aparecen en su panel). Solo crea los que faltan, se puede llamar varias veces.
+ */
+async function syncDirectCustomerServices(admin: ServiceAdminClient): Promise<{ ok: true; created: number } | { ok: false; error: string }> {
+  const { data: accounts, error } = await admin
+    .from("streaming_accounts")
+    .select("id, seller_id, platform_id, customer_id, email, password, label, expires_at, assigned_at")
+    .eq("assigned_by_admin", true)
+    .not("customer_id", "is", null);
+  if (error) return { ok: true, created: 0 }; // sin migración 0037 no hay nada que enlazar
+  const list = accounts ?? [];
+  if (list.length === 0) return { ok: true, created: 0 };
+
+  const { data: linked } = await admin
+    .from("services")
+    .select("account_id")
+    .in("account_id", list.map((item) => String(item.id)));
+  const linkedIds = new Set((linked ?? []).map((item) => String(item.account_id)));
+  const missing = list.filter((item) => !linkedIds.has(String(item.id)));
+  if (missing.length === 0) return { ok: true, created: 0 };
+
+  // Producto interno (oculto) por plataforma: la base de datos exige un producto en cada servicio.
+  const productIds = new Map<string, string>();
+  async function productFor(sellerId: string, platformId: string): Promise<string | null> {
+    const key = `${sellerId}:${platformId}`;
+    const cached = productIds.get(key);
+    if (cached) return cached;
+    const { data: found } = await admin
+      .from("products")
+      .select("id")
+      .eq("seller_id", sellerId)
+      .eq("platform_id", platformId)
+      .eq("name", "Cuenta asignada")
+      .limit(1)
+      .maybeSingle();
+    let productId = found?.id ? String(found.id) : null;
+    if (!productId) {
+      const { data: created } = await admin
+        .from("products")
+        .insert({
+          seller_id: sellerId,
+          platform_id: platformId,
+          name: "Cuenta asignada",
+          description: "Uso interno: cuentas asignadas por la administradora.",
+          cost_price: 0,
+          sale_price: 0,
+          status: "inactive",
+        })
+        .select("id")
+        .maybeSingle();
+      productId = created?.id ? String(created.id) : null;
+    }
+    if (productId) productIds.set(key, productId);
+    return productId;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  let created = 0;
+  for (const account of missing) {
+    const sellerId = String(account.seller_id);
+    const platformId = String(account.platform_id);
+    const productId = await productFor(sellerId, platformId);
+    if (!productId) return { ok: false, error: "no se pudo preparar el producto interno." };
+    const startDate = account.assigned_at ? String(account.assigned_at).slice(0, 10) : today;
+    const endDate = account.expires_at
+      ? String(account.expires_at).slice(0, 10)
+      : new Date(Date.parse(startDate) + 30 * 86400000).toISOString().slice(0, 10);
+    const { error: insertError } = await admin.from("services").insert({
+      seller_id: sellerId,
+      customer_id: String(account.customer_id),
+      product_id: productId,
+      platform_id: platformId,
+      start_date: startDate,
+      end_date: endDate,
+      cost_price: 0,
+      sale_price: 0,
+      status: "active",
+      notes: "Cuenta asignada por la administradora",
+      platform_email: String(account.email ?? "") || null,
+      account_id: String(account.id),
+      access_password: String(account.password ?? "") || null,
+      access_profile: String(account.label ?? "") || null,
+    });
+    if (insertError) return { ok: false, error: insertError.message };
+    created += 1;
+  }
+  return { ok: true, created };
+}
+
+/** Administrador: completa en el panel del cliente las cuentas directas que aún no se ven ahí. */
+export async function syncDirectCustomerServicesAction() {
+  if (!isSupabaseConfigured()) return { ok: true, created: 0 };
+  const session = await getAppSession();
+  if (session.mode !== "live" || (session.role !== "superadmin" && session.role !== "support")) {
+    return { ok: true, created: 0 };
+  }
+  const admin = createServiceClient();
+  if (!admin) return { ok: true, created: 0 };
+  return syncDirectCustomerServices(admin);
 }
 
 /** Administrador: guarda el WhatsApp de contacto que ven los vendedores. */
@@ -1730,6 +1840,8 @@ export async function removeAssignedAccountAction(id: string) {
   requireRole(session, ["support"]);
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
+  // Si era de un cliente directo, también se quita de su panel.
+  await admin.from("services").delete().eq("account_id", id).eq("notes", "Cuenta asignada por la administradora");
   const { error } = await admin
     .from("streaming_accounts")
     .delete()

@@ -1,3 +1,4 @@
+import { syncDirectCustomerServicesAction } from "@/app/actions/business";
 import { AdminAccountAssign } from "@/components/admin/AdminAccountAssign";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { loadAdminAssignedAccounts, loadCustomers, loadPlatforms, loadSellers } from "@/lib/data/queries";
@@ -5,6 +6,8 @@ import { loadAdminAssignedAccounts, loadCustomers, loadPlatforms, loadSellers } 
 export const dynamic = "force-dynamic";
 
 export default async function AdminAssignedAccountsPage() {
+  // Pasa al panel del cliente las cuentas directas que aún no se ven ahí (ej. asignadas antes de este cambio).
+  await syncDirectCustomerServicesAction().catch(() => null);
   const [sellers, platforms, assigned] = await Promise.all([
     loadSellers(),
     loadPlatforms(),
