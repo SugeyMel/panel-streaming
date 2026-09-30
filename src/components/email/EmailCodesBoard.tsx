@@ -103,6 +103,9 @@ export function EmailCodesBoard({
   const [open, setOpen] = useState(false);
   const [platformEdit, setPlatformEdit] = useState<ConnectedEmailAccount | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Aviso junto al botón "Guardar filtro" (el mensaje general queda arriba y no se ve).
+  const [filterStatus, setFilterStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingFilter, setSavingFilter] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [draftEmail, setDraftEmail] = useState("");
   const [selectedId, setSelectedId] = useState(emails[0]?.id ?? "");
@@ -415,9 +418,20 @@ export function EmailCodesBoard({
               formData.set("allowNetflixTravel", allowTravel ? "true" : "false");
               formData.set("allowNetflixHousehold", allowHousehold ? "true" : "false");
               formData.set("extraBlockKeywords", extraKeywords);
-              const result = await saveEmailFilterAction(formData);
-              flash(result.ok, result.ok ? "Filtro guardado." : result.error ?? "No se pudo guardar");
-              if (result.ok) refresh();
+              setSavingFilter(true);
+              setFilterStatus(null);
+              try {
+                const result = await saveEmailFilterAction(formData);
+                setFilterStatus({
+                  ok: result.ok,
+                  text: result.ok ? "✓ Filtro guardado. Ya se aplica a los códigos." : result.error ?? "No se pudo guardar",
+                });
+                if (result.ok) refresh();
+              } catch {
+                setFilterStatus({ ok: false, text: "No se pudo guardar. Inténtalo de nuevo." });
+              } finally {
+                setSavingFilter(false);
+              }
             }}
           >
             <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
@@ -460,81 +474,22 @@ export function EmailCodesBoard({
                 />
               </label>
             </div>
-            <Button type="submit" disabled={pending} className="!min-h-8 mt-1 h-8 w-full px-3 text-xs">
-              Guardar filtro
+            <Button type="submit" disabled={pending || savingFilter} className="!min-h-8 mt-1 h-8 w-full px-3 text-xs">
+              {savingFilter ? "Guardando..." : "Guardar filtro"}
             </Button>
+            {filterStatus ? (
+              <p
+                className={`rounded-lg px-2 py-1 text-center text-[11px] font-medium ${
+                  filterStatus.ok ? "bg-emerald-500/15 text-emerald-300" : "bg-red-500/15 text-red-300"
+                }`}
+              >
+                {filterStatus.text}
+              </p>
+            ) : null}
           </form>
         </section>
       </div>
 
-      <section id="codes-tester" className="shrink-0 rounded-2xl border border-[#253047] bg-[#111827] p-2.5">
-        <div className="mb-1.5 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-white">Probar un mensaje</h2>
-          <div className="hidden gap-1 sm:flex">
-            {FILTER_TEST_PRESETS.slice(0, 4).map((preset) => (
-              <button
-                key={preset.label}
-                type="button"
-                onClick={() => loadPreset(preset.slug)}
-                className="rounded-full border border-[#253047] px-2 py-0.5 text-[10px] text-[#94A3B8] hover:text-white"
-              >
-                {preset.label.replace(" · ", " ")}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid items-center gap-1.5 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_auto]">
-          <select
-            value={testPlatformId}
-            onChange={(event) => setTestPlatformId(event.target.value)}
-            className="ui-field box-border h-11 min-h-11 !py-2.5 text-sm leading-normal"
-          >
-            {platforms.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={testFrom}
-            onChange={(event) => setTestFrom(event.target.value)}
-            className="ui-field box-border h-11 min-h-11 !py-2.5 text-sm leading-normal"
-            placeholder="Correo remitente"
-          />
-          <input
-            value={testSubject}
-            onChange={(event) => setTestSubject(event.target.value)}
-            className="ui-field box-border h-11 min-h-11 !py-2.5 text-sm leading-normal"
-            placeholder="Asunto del correo"
-          />
-          <button
-            type="button"
-            onClick={() => setShowTest(true)}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
-          >
-            Probar
-          </button>
-        </div>
-        {showTest ? (
-          <div
-            className={`mt-1.5 flex flex-wrap items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs ${
-              testVerdict.decision === "allow"
-                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
-                : "border-red-400/30 bg-red-400/10 text-red-100"
-            }`}
-          >
-            <span className="font-semibold">
-              Resultado: {testVerdict.decision === "allow" ? "Permitido" : "Bloqueado"}
-            </span>
-            {testVerdict.decision === "allow" && testCode ? (
-              <span className="rounded-lg bg-black/20 px-2 py-0.5 font-mono text-sm tracking-[0.2em] text-white">
-                {testCode}
-              </span>
-            ) : null}
-            <span className="text-[10px] opacity-80">{testVerdict.reason}</span>
-          </div>
-        ) : null}
-      </section>
 
       {lookups.length ? (
         <details className="shrink-0 rounded-xl border border-[#253047] bg-[#0B111C] px-2.5 py-1.5 lg:max-h-8">
