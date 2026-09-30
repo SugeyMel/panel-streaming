@@ -9,7 +9,7 @@ import {
   loadServices,
   loadStreamingAccounts,
 } from "@/lib/data/queries";
-import { loadCodeSettings } from "@/lib/code-settings";
+import { loadCodeSettings, applyPlatformRule, platformCodesEnabled, platformRuleFor } from "@/lib/code-settings";
 import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
 import { readFilteredAccessCode } from "@/lib/email-mailbox-read";
 import { deleteOAuthTokens } from "@/lib/email-oauth";
@@ -539,11 +539,12 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     loadEmailFilterPolicy(null),
     loadEmailFilterPolicy(service.sellerId),
   ]);
-  const policy = mergeEmailFilterPolicies(globalFilter, sellerFilter);
   const platform = platforms.find((item) => item.id === service.platformId);
   const codeSettings = await loadCodeSettings();
-  policy.allowDisneyHousehold = codeSettings.allowDisneyHousehold;
-  if (codeSettings.disabledPlatformIds.includes(service.platformId)) {
+  // Reglas de la plataforma (Administrador → Correos → Reglas de códigos).
+  const rule = platformRuleFor(codeSettings, { id: service.platformId, slug: platform?.slug }, globalFilter);
+  const policy = applyPlatformRule(mergeEmailFilterPolicies(globalFilter, sellerFilter), sellerFilter, rule);
+  if (!rule.enabled) {
     return {
       type: "UNKNOWN_BLOCKED",
       status: "DENIED",
@@ -775,7 +776,7 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
   const platform = platforms.find((item) => item.id === platformId);
   if (!platform) return blocked("DENIED", "Esa plataforma no está disponible.");
   const codeSettings = await loadCodeSettings();
-  if (codeSettings.disabledPlatformIds.includes(platformId)) {
+  if (!platformCodesEnabled(codeSettings, platformId)) {
     return blocked("DENIED", `Los códigos de ${platform.name} están pausados por el administrador.`);
   }
 
@@ -807,8 +808,8 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
     loadEmailFilterPolicy(null),
     loadEmailFilterPolicy(sellerId),
   ]);
-  const policy = mergeEmailFilterPolicies(globalFilter, sellerFilter);
-  policy.allowDisneyHousehold = codeSettings.allowDisneyHousehold;
+  const rule = platformRuleFor(codeSettings, platform, globalFilter);
+  const policy = applyPlatformRule(mergeEmailFilterPolicies(globalFilter, sellerFilter), sellerFilter, rule);
   const notFound = blocked(
     "NOT_FOUND",
     "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
