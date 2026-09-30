@@ -120,6 +120,11 @@ export function EmailCodesBoard({
   const [allowTravel, setAllowTravel] = useState(filterPolicy.allowNetflixTravel);
   const [allowHousehold, setAllowHousehold] = useState(filterPolicy.allowNetflixHousehold);
   const [extraKeywords, setExtraKeywords] = useState(filterPolicy.extraBlockKeywords.join("\n"));
+  const [newKeyword, setNewKeyword] = useState("");
+  const keywordList = extraKeywords
+    .split(/\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   useEffect(() => {
     if (!emails.some((item) => item.id === selectedId) && emails[0]) setSelectedId(emails[0].id);
@@ -203,6 +208,51 @@ export function EmailCodesBoard({
       tone: "amber" as const,
     },
   ];
+
+  async function saveFilter(keywords: string) {
+    const formData = new FormData();
+    formData.set("scope", mode === "admin" ? "global" : "seller");
+    if (sellerId) formData.set("sellerId", sellerId);
+    formData.set("allowLoginCode", allowLogin ? "true" : "false");
+    formData.set("allowVerificationCode", allowVerification ? "true" : "false");
+    formData.set("allowNetflixTravel", allowTravel ? "true" : "false");
+    formData.set("allowNetflixHousehold", allowHousehold ? "true" : "false");
+    formData.set("extraBlockKeywords", keywords);
+    setSavingFilter(true);
+    setFilterStatus(null);
+    try {
+      const result = await saveEmailFilterAction(formData);
+      setFilterStatus({
+        ok: result.ok,
+        text: result.ok ? "✓ Filtro guardado. Ya se aplica a los códigos." : result.error ?? "No se pudo guardar",
+      });
+      if (result.ok) refresh();
+    } catch {
+      setFilterStatus({ ok: false, text: "No se pudo guardar. Inténtalo de nuevo." });
+    } finally {
+      setSavingFilter(false);
+    }
+  }
+
+  async function addKeyword() {
+    const value = newKeyword.trim();
+    if (!value) return;
+    if (keywordList.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      setNewKeyword("");
+      return;
+    }
+    const next = [...keywordList, value].join("\n");
+    setExtraKeywords(next);
+    setNewKeyword("");
+    await saveFilter(next);
+  }
+
+  async function removeKeyword(value: string) {
+    if (!window.confirm(`¿Eliminar el filtro "${value}"?`)) return;
+    const next = keywordList.filter((item) => item !== value).join("\n");
+    setExtraKeywords(next);
+    await saveFilter(next);
+  }
 
   function flash(ok: boolean, text: string) {
     setMessage({ ok, text });
@@ -360,10 +410,6 @@ export function EmailCodesBoard({
                   returnTo={mode === "admin" ? "/admin/correos" : "/panel/correos"}
                   oauthConfigured={oauthConfigured}
                   onSelect={() => setSelectedId(account.id)}
-                  onTest={() => {
-                    setSelectedId(account.id);
-                    loadPreset("netflix");
-                  }}
                   onConfigure={() => {
                     setSelectedId(account.id);
                     jumpTo("codes-filters");
@@ -406,35 +452,17 @@ export function EmailCodesBoard({
         >
           <h2 className="text-sm font-semibold text-white">Permisos de códigos</h2>
           <p className="mt-0.5 truncate text-[11px] text-[#64748B]">
-            {selected ? selected.email : "Aplica a todos los buzones de este vendedor"}
+            {mode === "admin"
+              ? "Se aplica a todos los correos (vendedores y clientes)"
+              : "Aplica a todos los buzones de este vendedor"}
           </p>
           <form
             className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5"
-            action={async (formData) => {
-              formData.set("scope", mode === "admin" ? "global" : "seller");
-              if (sellerId) formData.set("sellerId", sellerId);
-              formData.set("allowLoginCode", allowLogin ? "true" : "false");
-              formData.set("allowVerificationCode", allowVerification ? "true" : "false");
-              formData.set("allowNetflixTravel", allowTravel ? "true" : "false");
-              formData.set("allowNetflixHousehold", allowHousehold ? "true" : "false");
-              formData.set("extraBlockKeywords", extraKeywords);
-              setSavingFilter(true);
-              setFilterStatus(null);
-              try {
-                const result = await saveEmailFilterAction(formData);
-                setFilterStatus({
-                  ok: result.ok,
-                  text: result.ok ? "✓ Filtro guardado. Ya se aplica a los códigos." : result.error ?? "No se pudo guardar",
-                });
-                if (result.ok) refresh();
-              } catch {
-                setFilterStatus({ ok: false, text: "No se pudo guardar. Inténtalo de nuevo." });
-              } finally {
-                setSavingFilter(false);
-              }
+            action={async () => {
+              await saveFilter(extraKeywords);
             }}
           >
-            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+                        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
               {permissionRows.map((row) => (
                 <div
                   key={row.key}
@@ -463,16 +491,56 @@ export function EmailCodesBoard({
                   </p>
                 </div>
               </div>
-              <label className="block">
-                <span className="text-[11px] font-medium text-[#E2E8F0]">Palabras extra para bloquear</span>
-                <textarea
-                  value={extraKeywords}
-                  onChange={(event) => setExtraKeywords(event.target.value)}
-                  rows={2}
-                  placeholder={"cambiar correo\nmétodo de pago"}
-                  className="ui-field mt-1 min-h-[3.2rem] py-1.5 text-xs"
-                />
-              </label>
+              <div className="block">
+                <span className="text-[11px] font-medium text-[#E2E8F0]">
+                  Filtros guardados (palabras que bloquean un correo)
+                </span>
+                {keywordList.length ? (
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {keywordList.map((item) => (
+                      <span
+                        key={item}
+                        className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-400/30 bg-red-500/10 py-0.5 pr-1 pl-2 text-[11px] text-red-100"
+                      >
+                        <span className="truncate">🔒 {item}</span>
+                        <button
+                          type="button"
+                          disabled={savingFilter}
+                          onClick={() => removeKeyword(item)}
+                          className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-red-200 hover:bg-red-500/30 disabled:opacity-50"
+                          aria-label={`Eliminar ${item}`}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[11px] text-[#64748B]">Aún no tienes filtros extra.</p>
+                )}
+                <div className="mt-1.5 flex gap-1.5">
+                  <input
+                    value={newKeyword}
+                    onChange={(event) => setNewKeyword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void addKeyword();
+                      }
+                    }}
+                    placeholder="Ej: Netflix: Tu código de inicio de sesión"
+                    className="ui-field h-8 min-w-0 flex-1 py-1 text-xs"
+                  />
+                  <button
+                    type="button"
+                    disabled={savingFilter || !newKeyword.trim()}
+                    onClick={() => void addKeyword()}
+                    className="h-8 shrink-0 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-violet-400/50 disabled:opacity-50"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              </div>
             </div>
             <Button type="submit" disabled={pending || savingFilter} className="!min-h-8 mt-1 h-8 w-full px-3 text-xs">
               {savingFilter ? "Guardando..." : "Guardar filtro"}
