@@ -349,13 +349,41 @@ function AccessCard({
           {result.code ? (
             <p className="mt-1 text-2xl font-semibold tracking-[0.2em] text-white">{result.code}</p>
           ) : null}
+          {result.status === "FOUND" && result.link && !result.code ? (
+            <div className="mt-2 space-y-1">
+              <a
+                href={result.link}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#E50914] px-4 text-sm font-semibold text-white hover:brightness-110"
+              >
+                {result.link.includes("update-primary-location") ? "Actualizar hogar en Netflix" : "Obtener código en Netflix"}
+              </a>
+              <p className="text-[11px] text-[#94A3B8]">
+                {result.link.includes("update-primary-location")
+                  ? "Se abre Netflix: pulsa \"Actualizar hogar\". El enlace caduca en 15 minutos."
+                  : "Se abre Netflix con el código para tu TV. El enlace caduca en 15 minutos."}
+              </p>
+            </div>
+          ) : null}
           {result.status === "FOUND" && result.history && result.history.length > 1 ? (
             <div className="mt-2 border-t border-white/10 pt-2">
               <p className="text-[11px] font-medium text-[#94A3B8]">Códigos de los últimos 30 minutos</p>
               <ul className="mt-1 space-y-1">
                 {result.history.map((item, index) => (
                   <li key={`${item.code}-${index}`} className="flex items-center justify-between gap-2 text-[12px]">
-                    <span className="font-mono font-semibold tracking-[0.15em] text-white">{item.code}</span>
+                    {item.link && !item.code ? (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-[#F87171] underline"
+                      >
+                        {item.link.includes("update-primary-location") ? "Hogar Netflix" : "Enlace Netflix"}
+                      </a>
+                    ) : (
+                      <span className="font-mono font-semibold tracking-[0.15em] text-white">{item.code}</span>
+                    )}
                     <span className="text-[#94A3B8]" suppressHydrationWarning>
                       {item.at ? codeAgeLabel(item.at) : ""}
                     </span>

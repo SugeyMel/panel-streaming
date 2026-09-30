@@ -707,9 +707,15 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
   return {
     type: live.type,
     status: "FOUND",
-    code: live.code,
+    code: live.code || undefined,
+    link: live.link,
     history: live.history,
-    message: "Código temporal encontrado",
+    message:
+      live.link && !live.code
+        ? live.link.includes("update-primary-location")
+          ? "Abre el enlace de Netflix para actualizar tu hogar"
+          : "Abre el enlace de Netflix para ver tu código"
+        : "Código temporal encontrado",
   };
 }
 
@@ -731,7 +737,7 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
         platform_id: platformId || null,
         email,
         // El código solo se guarda internamente (alerta de Disney); el historial no lo muestra.
-        code: result.status === "FOUND" ? (result.code ?? null) : null,
+        code: result.status === "FOUND" ? (result.code || (result.link ? "enlace" : null)) : null,
       };
       const insert = await db()?.from("seller_code_lookups").insert({ ...row, result: result.status });
       // Sin la migración 0038 aún no existe la columna "result": se guarda sin ella.
@@ -863,9 +869,15 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
   return {
     type: result.type,
     status: "FOUND",
-    code: result.code,
+    code: result.code || undefined,
+    link: result.link,
     history: result.history,
-    message: "Código temporal encontrado",
+    message:
+      result.link && !result.code
+        ? result.link.includes("update-primary-location")
+          ? "Abre el enlace de Netflix para actualizar el hogar"
+          : "Abre el enlace de Netflix para ver el código"
+        : "Código temporal encontrado",
   };
 }
 

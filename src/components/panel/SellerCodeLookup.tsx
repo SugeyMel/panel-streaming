@@ -189,6 +189,24 @@ export function SellerCodeLookup({
               </button>
             </div>
           ) : null}
+          {result.status === "FOUND" && result.link && !result.code ? (
+            <div className="mt-2 space-y-1.5">
+              <a
+                href={result.link}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#E50914] px-4 text-sm font-semibold text-white hover:brightness-110"
+              >
+                {result.link.includes("update-primary-location") ? "Actualizar hogar en Netflix" : "Obtener código en Netflix"}
+              </a>
+              <p className="text-[11px] text-[#94A3B8]">
+                {result.link.includes("update-primary-location")
+                  ? "Se abre Netflix: pulsa \"Actualizar hogar\". El enlace caduca en 15 minutos"
+                  : "Se abre la página de Netflix con el código para la TV. El enlace caduca en 15 minutos"}
+                {result.history?.[0]?.at ? ` · llegó ${codeAgeLabel(result.history[0].at)}` : ""}.
+              </p>
+            </div>
+          ) : null}
           {result.status === "FOUND" && result.history && result.history.length > 0 ? (
             <div className="mt-4 border-t border-emerald-500/20 pt-3">
               <p className="text-xs font-semibold text-emerald-200/80">
@@ -201,21 +219,34 @@ export function SellerCodeLookup({
                     className="flex items-center justify-between gap-3 rounded-lg bg-black/20 px-3 py-2"
                   >
                     <span className="flex items-baseline gap-2">
-                      <span className="text-lg font-bold tracking-[0.2em] text-white">{item.code}</span>
+                      <span className="text-lg font-bold tracking-[0.2em] text-white">
+                        {item.code || (item.link ? (item.link.includes("update-primary-location") ? "Hogar Netflix" : "Enlace Netflix") : "")}
+                      </span>
                       <span className="text-[11px] text-[#94A3B8]">
                         {index === 0 ? "más reciente" : ""}
                         {index === 0 && item.at ? " · " : ""}
                         {item.at ? codeAgeLabel(item.at) : ""}
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => copyHistoryCode(item.code)}
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#253047] bg-[#1B2436] px-2.5 text-[11px] font-semibold text-white"
-                    >
-                      <CopyIcon className="h-3.5 w-3.5" />
-                      {copiedHistory === item.code ? "Copiado" : "Copiar"}
-                    </button>
+                    {item.link && !item.code ? (
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-8 items-center rounded-lg bg-[#E50914] px-2.5 text-[11px] font-semibold text-white"
+                      >
+                        Abrir
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => copyHistoryCode(item.code)}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#253047] bg-[#1B2436] px-2.5 text-[11px] font-semibold text-white"
+                      >
+                        <CopyIcon className="h-3.5 w-3.5" />
+                        {copiedHistory === item.code ? "Copiado" : "Copiar"}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

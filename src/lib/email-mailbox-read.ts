@@ -2,6 +2,7 @@ import {
   accountChangeNotice,
   classifyEmailMessage,
   extractAccessCode,
+  extractNetflixActionLink,
   htmlToText,
   type ClassifiableMessage,
 } from "@/lib/email-code-filter";
@@ -9,7 +10,13 @@ import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/l
 import type { EmailCodeFilterPolicy, EmailLookupType, Platform } from "@/lib/types";
 
 export type MailboxReadResult =
-  | { status: "found"; type: EmailLookupType; code: string; history: { code: string; at?: number }[] }
+  | {
+      status: "found";
+      type: EmailLookupType;
+      code: string;
+      link?: string;
+      history: { code: string; at?: number; link?: string }[];
+    }
   | { status: "not_found" }
   | { status: "not_connected" }
   | { status: "reconnect" }
@@ -52,15 +59,15 @@ function decodeB64Url(data: string) {
   return Buffer.from(padded, "base64").toString("utf8");
 }
 
-function collectText(part: GmailMessage["payload"] | undefined, out: string[]) {
+function collectText(part: GmailMessage["payload"] | undefined, out: string[], rawOut?: string[]) {
   if (!part) return;
   const mime = part.mimeType ?? "";
   if (part.body?.data && (mime.startsWith("text/plain") || mime === "text/html")) {
-    let text = decodeB64Url(part.body.data);
-    if (mime === "text/html") text = htmlToText(text);
-    out.push(text);
+    const raw = decodeB64Url(part.body.data);
+    rawOut?.push(raw);
+    out.push(mime === "text/html" ? htmlToText(raw) : raw);
   }
-  for (const child of part.parts ?? []) collectText(child, out);
+  for (const child of part.parts ?? []) collectText(child, out, rawOut);
 }
 
 async function gmailMessage(accessToken: string, id: string, format: "metadata" | "full") {
@@ -117,10 +124,11 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
 
 async function gmailFullText(accessToken: string, id: string) {
   const full = await gmailMessage(accessToken, id, "full");
-  if ("unauthorized" in full && full.unauthorized) return { unauthorized: true as const, text: "" };
+  if ("unauthorized" in full && full.unauthorized) return { unauthorized: true as const, text: "", raw: "" };
   const parts: string[] = [];
-  collectText(full.message?.payload, parts);
-  return { unauthorized: false as const, text: parts.join("\n").slice(0, 8000) };
+  const rawParts: string[] = [];
+  collectText(full.message?.payload, parts, rawParts);
+  return { unauthorized: false as const, text: parts.join("\n").slice(0, 8000), raw: rawParts.join("\n") };
 }
 
 async function microsoftFullText(accessToken: string, id: string) {
@@ -130,12 +138,12 @@ async function microsoftFullText(accessToken: string, id: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (response.status === 401 || response.status === 403) return { unauthorized: true as const, text: "" };
-  if (!response.ok) return { unauthorized: false as const, text: "" };
+  if (response.status === 401 || response.status === 403) return { unauthorized: true as const, text: "", raw: "" };
+  if (!response.ok) return { unauthorized: false as const, text: "", raw: "" };
   const json = (await response.json()) as { body?: { contentType?: string; content?: string } };
-  let text = json.body?.content ?? "";
-  if ((json.body?.contentType ?? "").toLowerCase() === "html") text = htmlToText(text);
-  return { unauthorized: false as const, text: text.slice(0, 8000) };
+  const raw = json.body?.content ?? "";
+  const text = (json.body?.contentType ?? "").toLowerCase() === "html" ? htmlToText(raw) : raw;
+  return { unauthorized: false as const, text: text.slice(0, 8000), raw };
 }
 
 async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
@@ -198,13 +206,30 @@ export async function readFilteredAccessCode(
 
   await touchMailboxSync(mailbox.id, mailbox.sellerId);
 
-  const history: { code: string; at?: number }[] = [];
+  const history: { code: string; at?: number; link?: string }[] = [];
   let firstType: EmailLookupType | null = null;
 
   for (const message of raw) {
     if (history.length >= CODE_HISTORY_MAX) break;
     const verdict = classifyEmailMessage(message, policy, platform);
     if (verdict.decision !== "allow") continue;
+    // Netflix "código de acceso temporal" o "cambiar hogar": no traen número, se entrega el enlace del botón.
+    if (verdict.category === "travel_link" || verdict.category === "household_link") {
+      if (!message.id) continue;
+      const full =
+        access.token.provider === "google"
+          ? await gmailFullText(access.token.accessToken, message.id)
+          : await microsoftFullText(access.token.accessToken, message.id);
+      if (full.unauthorized) {
+        await markMailboxReconnect(mailbox.id, mailbox.sellerId);
+        return { status: "reconnect" };
+      }
+      const link = extractNetflixActionLink(full.raw, verdict.category === "travel_link" ? "travel" : "household");
+      if (!link || history.some((item) => item.link === link)) continue;
+      if (!firstType) firstType = verdict.type;
+      history.push({ code: "", link, at: message.receivedAt });
+      continue;
+    }
     let code = extractAccessCode(`${message.subject} ${message.snippet ?? ""}`);
     const maybeId = message.id;
     if (!code && maybeId) {
@@ -219,13 +244,13 @@ export async function readFilteredAccessCode(
       code = extractAccessCode(full.text);
     }
     if (!code) continue;
-    if (history.some((item) => item.code === code)) continue;
+    if (history.some((item) => item.code && item.code === code)) continue;
     if (!firstType) firstType = verdict.type;
     history.push({ code, at: message.receivedAt });
   }
 
   if (history.length > 0 && firstType) {
-    return { status: "found", type: firstType, code: history[0].code, history };
+    return { status: "found", type: firstType, code: history[0].code, link: history[0].link, history };
   }
   return { status: "not_found" };
 }

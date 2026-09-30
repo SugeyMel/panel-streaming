@@ -274,6 +274,21 @@ const VERIFICATION_SUBJECTS = [
   "code expires in",
 ];
 
+// Netflix: "Tu código de acceso temporal de Netflix" (trae un botón "Solicitar código", no el número).
+const NETFLIX_TEMP_ACCESS = [
+  "codigo de acceso temporal",
+  "temporary access code",
+];
+
+// Netflix: "Importante: Cómo cambiar tu hogar Netflix" (botón "Sí, lo solicité yo" → página "Actualizar hogar").
+const NETFLIX_HOUSEHOLD_LINK = [
+  "como cambiar tu hogar netflix",
+  "cambiar tu hogar netflix",
+  "how to update your netflix household",
+  "update your netflix household",
+  "change your netflix household",
+];
+
 const TRAVEL_SUBJECTS = [
   "estoy de viaje",
   "i'm traveling",
@@ -395,6 +410,36 @@ export function classifyEmailMessage(
   const senderOk = allowedHosts.length ? hostMatches(host, allowedHosts) : false;
   const isNetflix = slug.toLowerCase().includes("netflix");
 
+  if (isNetflix && includesAny(text, NETFLIX_TEMP_ACCESS) && (senderOk || host.endsWith("netflix.com"))) {
+    return policy.allowNetflixTravel
+      ? {
+          decision: "allow",
+          type: "NETFLIX_TRAVEL_CODE",
+          category: "travel_link",
+          reason: "Permitido: código de acceso temporal de Netflix (se obtiene con el enlace).",
+        }
+      : {
+          decision: "block",
+          type: "UNKNOWN_BLOCKED",
+          category: "travel",
+          reason: "Bloqueado: el código de viaje / TV de Netflix está apagado.",
+        };
+  }
+  if (isNetflix && includesAny(text, NETFLIX_HOUSEHOLD_LINK) && (senderOk || host.endsWith("netflix.com"))) {
+    return policy.allowNetflixHousehold
+      ? {
+          decision: "allow",
+          type: "NETFLIX_HOUSEHOLD_ACTION",
+          category: "household_link",
+          reason: "Permitido: actualizar hogar de Netflix (se hace con el enlace).",
+        }
+      : {
+          decision: "block",
+          type: "UNKNOWN_BLOCKED",
+          category: "household",
+          reason: "Bloqueado: actualizar hogar de Netflix está apagado.",
+        };
+  }
   if (policy.allowNetflixTravel && isNetflix && includesAny(text, TRAVEL_SUBJECTS) && (senderOk || host.endsWith("netflix.com"))) {
     return {
       decision: "allow",
@@ -462,6 +507,33 @@ export function classifyEmailMessage(
  * Quita estilos, scripts y comentarios: ahí hay colores como "#707070"
  * que antes se confundían con el código.
  */
+const NETFLIX_ACTION_PATHS = {
+  travel: "/account/travel/verify",
+  household: "/account/update-primary-location",
+} as const;
+
+/**
+ * Enlace de acción de un correo de Netflix: "Solicitar código" (acceso temporal) o "Sí, lo solicité yo" (hogar).
+ * Solo se acepta esa ruta exacta de netflix.com: nunca los enlaces de contraseña o de cerrar sesión.
+ */
+export function extractNetflixActionLink(raw: string, kind: keyof typeof NETFLIX_ACTION_PATHS) {
+  const path = NETFLIX_ACTION_PATHS[kind];
+  const pattern = new RegExp(`https://www\\.netflix\\.com${path.replace(/\//g, "\\/")}\\?[^\\s"'<>\\]\\)]+`, "gi");
+  for (const match of raw.matchAll(pattern)) {
+    try {
+      const url = new URL(match[0].replace(/&amp;/gi, "&"));
+      if (url.hostname === "www.netflix.com" && url.pathname === path) return url.toString();
+    } catch {
+      /* siguiente */
+    }
+  }
+  return null;
+}
+
+export function extractNetflixTravelLink(raw: string) {
+  return extractNetflixActionLink(raw, "travel");
+}
+
 export function htmlToText(html: string) {
   return html
     .replace(/<!--[\s\S]*?-->/g, " ")
