@@ -392,7 +392,11 @@ export function EmailCodesBoard({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 gap-2 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <div
+        className={`grid min-h-0 flex-1 gap-2 ${
+          mode === "admin" ? "" : "lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]"
+        }`}
+      >
         <section className="flex min-h-0 flex-col rounded-2xl border border-[#253047] bg-[#111827] p-2.5">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Correos conectados</h2>
@@ -412,7 +416,12 @@ export function EmailCodesBoard({
                   onSelect={() => setSelectedId(account.id)}
                   onConfigure={() => {
                     setSelectedId(account.id);
-                    jumpTo("codes-filters");
+                    if (mode === "admin") {
+                      // Administradora: los permisos ahora están en "Reglas de códigos" (arriba).
+                      document.getElementById("code-rules")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    } else {
+                      jumpTo("codes-filters");
+                    }
                   }}
                   onAddPlatform={() => setPlatformEdit(account)}
                   onToggleCodes={async (enabled) => {
@@ -446,6 +455,7 @@ export function EmailCodesBoard({
           </div>
         </section>
 
+        {mode !== "admin" ? (
         <section
           id="codes-filters"
           className="flex min-h-0 flex-col rounded-2xl border border-[#253047] bg-[#111827] p-2.5"
@@ -556,6 +566,7 @@ export function EmailCodesBoard({
             ) : null}
           </form>
         </section>
+        ) : null}
       </div>
 
 

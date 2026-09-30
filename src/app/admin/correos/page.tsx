@@ -1,6 +1,6 @@
-import { PlatformCodeSettings } from "@/components/admin/PlatformCodeSettings";
+import { CodeRulesBoard } from "@/components/admin/CodeRulesBoard";
 import { EmailCodesBoard } from "@/components/email/EmailCodesBoard";
-import { loadCodeSettings } from "@/lib/code-settings";
+import { loadCodeSettings, platformRuleFor } from "@/lib/code-settings";
 import { loadEmailCodesBundle, loadPlatforms, loadSellers } from "@/lib/data/queries";
 import { isGoogleOAuthConfigured, isMicrosoftOAuthConfigured, oauthRedirectUri } from "@/lib/email-oauth-config";
 
@@ -22,9 +22,13 @@ export default async function AdminEmailsPage({
 
   return (
     <>
-      <PlatformCodeSettings
-        platforms={platforms.map((item) => ({ id: item.id, name: item.name }))}
-        initial={codeSettings}
+      <CodeRulesBoard
+        platforms={platforms.map((item) => ({ id: item.id, name: item.name, slug: item.slug ?? "" }))}
+        rules={Object.fromEntries(
+          platforms.map((item) => [item.id, platformRuleFor(codeSettings, item, bundle.globalFilter)]),
+        )}
+        savedIds={Object.keys(codeSettings.rules)}
+        globalWords={bundle.globalFilter.extraBlockKeywords}
       />
       <EmailCodesBoard
       mode="admin"
