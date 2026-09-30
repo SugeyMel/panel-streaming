@@ -45,6 +45,7 @@ export async function loadAccountChangeAlerts(): Promise<AccountChangeAlert[]> {
           .from("seller_code_lookups")
           .select("seller_id, created_at")
           .eq("email", notice.to)
+          .not("code", "is", null) // solo solicitudes con código entregado
           .gte("created_at", since)
           .lte("created_at", before)
           .order("created_at", { ascending: false })

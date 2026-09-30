@@ -720,6 +720,30 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
  * devuelve el contenido del correo, solo el código temporal.
  */
 export async function sellerLookupCodeAction(platformId: string, emailInput: string): Promise<EmailLookupResult> {
+  const result = await sellerLookupCodeInner(platformId, emailInput);
+  // Historial: se registra cada solicitud del vendedor (encontrada o no). Si falla, no bloquea al vendedor.
+  try {
+    const session = await getAppSession();
+    const email = String(emailInput ?? "").trim().toLowerCase();
+    if (session.mode !== "demo" && session.sellerId && email) {
+      const row = {
+        seller_id: session.sellerId,
+        platform_id: platformId || null,
+        email,
+        // El código solo se guarda internamente (alerta de Disney); el historial no lo muestra.
+        code: result.status === "FOUND" ? (result.code ?? null) : null,
+      };
+      const insert = await db()?.from("seller_code_lookups").insert({ ...row, result: result.status });
+      // Sin la migración 0038 aún no existe la columna "result": se guarda sin ella.
+      if (insert?.error) await db()?.from("seller_code_lookups").insert(row);
+    }
+  } catch {
+    /* sin registro no pasa nada grave */
+  }
+  return result;
+}
+
+async function sellerLookupCodeInner(platformId: string, emailInput: string): Promise<EmailLookupResult> {
   const blocked = (status: EmailLookupResult["status"], message: string): EmailLookupResult => ({
     type: "UNKNOWN_BLOCKED",
     status,
@@ -835,18 +859,6 @@ export async function sellerLookupCodeAction(platformId: string, emailInput: str
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
   if (result.status === "not_found") return notFound;
-
-  // Se guarda quién pidió el código (para la alerta de cambio de clave/correo). Si falla, no bloquea al vendedor.
-  try {
-    await db()?.from("seller_code_lookups").insert({
-      seller_id: sellerId,
-      platform_id: platformId,
-      email: email.toLowerCase(),
-      code: result.code,
-    });
-  } catch {
-    /* sin registro no pasa nada grave */
-  }
 
   return {
     type: result.type,
