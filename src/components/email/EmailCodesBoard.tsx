@@ -462,9 +462,7 @@ export function EmailCodesBoard({
         >
           <h2 className="text-sm font-semibold text-white">Permisos de códigos</h2>
           <p className="mt-0.5 truncate text-[11px] text-[#64748B]">
-            {mode === "admin"
-              ? "Se aplica a todos los correos (vendedores y clientes)"
-              : "Aplica a todos los buzones de este vendedor"}
+            Aplica a todos los buzones de este vendedor
           </p>
           <form
             className="mt-2 flex min-h-0 flex-1 flex-col gap-1.5"
