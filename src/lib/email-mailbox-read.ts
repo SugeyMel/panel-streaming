@@ -103,18 +103,46 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
   if (listRes.status === 401 || listRes.status === 403) return "unauthorized";
   const list = (await listRes.json()) as GmailList;
   if (!listRes.ok) return [];
-  const metas = await Promise.all((list.messages ?? []).map((item) => gmailMessage(accessToken, item.id, "metadata")));
+  let messages = list.messages ?? [];
+  const at = safeRecipient?.lastIndexOf("@") ?? -1;
+  const domain = safeRecipient && at > 0 ? safeRecipient.slice(at + 1).toLowerCase() : "";
+  const forwardedDomain =
+    domain.length > 0 &&
+    !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
+      domain,
+    );
+  // Gmail no indexa el To: original de un reenvío de dominio propio: se listan los recientes y se filtra aquí.
+  let filterToLocally = false;
+  if (messages.length === 0 && forwardedDomain && safeRecipient) {
+    const fallbackUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    fallbackUrl.searchParams.set("maxResults", "25");
+    fallbackUrl.searchParams.set("q", `after:${afterEpoch}`);
+    const fallbackRes = await fetch(fallbackUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (fallbackRes.status === 401 || fallbackRes.status === 403) return "unauthorized";
+    if (fallbackRes.ok) {
+      const fallback = (await fallbackRes.json()) as GmailList;
+      messages = fallback.messages ?? [];
+      filterToLocally = true;
+    }
+  }
+  const metas = await Promise.all(messages.map((item) => gmailMessage(accessToken, item.id, "metadata")));
   const out: ClassifiableMessage[] = [];
+  const wanted = safeRecipient?.toLowerCase() ?? "";
   for (let index = 0; index < metas.length; index += 1) {
     const meta = metas[index];
     if ("unauthorized" in meta && meta.unauthorized) return "unauthorized";
     const message = meta.message;
-    const id = list.messages?.[index]?.id;
+    const id = messages[index]?.id;
     if (!message || !id) continue;
+    const to = header(message.payload?.headers, "To");
+    if (filterToLocally && !to.toLowerCase().includes(wanted)) continue;
     out.push({
       from: header(message.payload?.headers, "From"),
       subject: header(message.payload?.headers, "Subject"),
-      to: header(message.payload?.headers, "To"),
+      to,
       snippet: message.snippet ?? "",
       id,
       receivedAt: Number(message.internalDate) || undefined,
