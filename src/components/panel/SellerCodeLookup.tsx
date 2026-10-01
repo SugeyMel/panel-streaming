@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { checkDisneyApprovalAction } from "@/app/actions/code-controls";
 import { sellerLookupCodeAction } from "@/app/actions/email-codes";
-import { CheckIcon, CopyIcon, KeyIcon, MailIcon, SearchIcon } from "@/components/icons";
+import { DisneyCodeWarning } from "@/components/access/DisneyCodeWarning";
+import { CheckIcon, CopyIcon, KeyIcon, MailIcon, SearchIcon, WhatsAppIcon } from "@/components/icons";
 import { CustomerSquareLogo } from "@/components/cliente/CustomerSquareLogo";
+import { isDisneyPlatform } from "@/lib/disney-code-policy";
 import { platformDisplayName } from "@/lib/platform-logos";
 import type { EmailLookupResult, Platform } from "@/lib/types";
+import { waLink } from "@/lib/whatsapp";
 
 /** "hace 5 min" / "recién" a partir de la hora en que llegó el mensaje. */
 function codeAgeLabel(at: number) {
@@ -18,11 +22,14 @@ export function SellerCodeLookup({
   platforms,
   initialPlatformId,
   initialEmail,
+  providerWhatsapp = "",
 }: {
   platforms: Platform[];
   /** Precarga que llega desde "Mis cuentas" > "Consultar mensajes". */
   initialPlatformId?: string;
   initialEmail?: string;
+  /** WhatsApp del proveedor (administrador) cuando se alcanza el límite. */
+  providerWhatsapp?: string;
 }) {
   const [platformId, setPlatformId] = useState<string>(
     initialPlatformId && platforms.some((item) => item.id === initialPlatformId)
@@ -34,15 +41,31 @@ export function SellerCodeLookup({
   const [result, setResult] = useState<EmailLookupResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [copiedHistory, setCopiedHistory] = useState<string | null>(null);
+  const [needsWarning, setNeedsWarning] = useState(false);
+  const selected = platforms.find((item) => item.id === platformId);
+  const disney = isDisneyPlatform(selected);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (pending) return;
+  useEffect(() => {
+    if (result?.status !== "PENDING_APPROVAL" || !result.approvalId) return;
+    const approvalId = result.approvalId;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await checkDisneyApprovalAction(approvalId);
+        if (next.status !== "PENDING_APPROVAL") setResult(next);
+      } catch {
+        /* se reintenta en el siguiente ciclo */
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [result?.status, result?.approvalId]);
+
+  async function runLookup(warningAccepted: boolean) {
     setPending(true);
     setResult(null);
     setCopied(false);
+    setNeedsWarning(false);
     try {
-      setResult(await sellerLookupCodeAction(platformId, email));
+      setResult(await sellerLookupCodeAction(platformId, email, { warningAccepted }));
     } catch {
       setResult({
         type: "UNKNOWN_BLOCKED",
@@ -52,6 +75,17 @@ export function SellerCodeLookup({
     } finally {
       setPending(false);
     }
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (pending) return;
+    if (disney) {
+      setResult(null);
+      setNeedsWarning(true);
+      return;
+    }
+    await runLookup(false);
   }
 
   async function copyCode(code: string) {
@@ -159,6 +193,8 @@ export function SellerCodeLookup({
         </button>
       </form>
 
+      {needsWarning ? <DisneyCodeWarning onAccept={() => runLookup(true)} /> : null}
+
       {result ? (
         <div
           role="status"
@@ -171,6 +207,17 @@ export function SellerCodeLookup({
           <p className={`text-sm ${result.status === "FOUND" ? "text-emerald-200" : "text-[#CBD5E1]"}`}>
             {result.message}
           </p>
+          {result.status === "RATE_LIMITED" && providerWhatsapp ? (
+            <a
+              href={waLink(providerWhatsapp, "Hola, alcancé el límite de códigos. ¿Me puedes ayudar?")}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#16A34A] px-3 text-xs font-semibold text-white"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+              WhatsApp
+            </a>
+          ) : null}
           {result.status === "FOUND" && result.code ? (
             <div className="mt-2 flex items-center justify-between gap-3">
               <span className="flex items-baseline gap-2">
@@ -210,7 +257,7 @@ export function SellerCodeLookup({
           {result.status === "FOUND" && result.history && result.history.length > 0 ? (
             <div className="mt-4 border-t border-emerald-500/20 pt-3">
               <p className="text-xs font-semibold text-emerald-200/80">
-                Códigos de los últimos 30 minutos
+                {disney ? "Códigos de los últimos 15 minutos" : "Códigos de los últimos 30 minutos"}
               </p>
               <ul className="mt-2 space-y-1.5">
                 {result.history.map((item, index) => (

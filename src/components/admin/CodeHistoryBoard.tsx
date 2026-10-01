@@ -13,7 +13,11 @@ const RESULT: Record<string, { label: string; className: string }> = {
   FOUND: { label: "Encontrado", className: "bg-[#16A34A] text-white" },
   NOT_FOUND: { label: "Sin código", className: "bg-[#F59E0B] text-[#1C1917]" },
   DENIED: { label: "Denegado", className: "bg-[#DC2626] text-white" },
-  RATE_LIMITED: { label: "Demasiados intentos", className: "bg-[#7C3AED] text-white" },
+  RATE_LIMITED: { label: "Límite alcanzado", className: "bg-[#7C3AED] text-white" },
+  PAUSED: { label: "Cuenta pausada", className: "bg-[#DC2626] text-white" },
+  PENDING_APPROVAL: { label: "Esperando aprobación", className: "bg-[#D97706] text-white" },
+  WARNING_ACCEPTED: { label: "Aceptó el aviso", className: "bg-[#B91C1C] text-white" },
+  EXPIRED: { label: "Solicitud cancelada", className: "bg-[#64748B] text-white" },
 };
 
 const RANGES = [

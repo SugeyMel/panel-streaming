@@ -28,6 +28,7 @@ export default async function SellerConsultasPage({
           platforms={platforms}
           initialPlatformId={plataforma}
           initialEmail={correo}
+          providerWhatsapp={adminWhatsapp}
         />
         <SellerAccessPromo platforms={platforms} adminWhatsapp={adminWhatsapp} />
       </div>

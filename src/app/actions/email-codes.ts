@@ -9,9 +9,28 @@ import {
   loadServices,
   loadStreamingAccounts,
 } from "@/lib/data/queries";
-import { loadCodeSettings, applyPlatformRule, platformCodesEnabled, platformRuleFor } from "@/lib/code-settings";
+import { loadCodeSettings, applyPlatformRule, platformCodesEnabled, platformRuleFor, type PlatformCodeRule } from "@/lib/code-settings";
 import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
-import { readFilteredAccessCode } from "@/lib/email-mailbox-read";
+import { findAccountChangeNotices, readFilteredAccessCode } from "@/lib/email-mailbox-read";
+import {
+  DISNEY_CODE_MAX_AGE_MINUTES,
+  DISNEY_EXPIRED_MESSAGE,
+  DISNEY_LIMIT_MESSAGE,
+  DISNEY_PAUSED_MESSAGE,
+  DISNEY_PENDING_MESSAGE,
+  DISNEY_REJECTED_MESSAGE,
+  isDisneyApprovalPlatform,
+  isDisneyPlatform,
+} from "@/lib/disney-code-policy";
+import {
+  claimDisneyApproval,
+  countDisneyDeliveries,
+  disneyHourlyLimitReached,
+  isAccountPaused,
+  lastCodeRequester,
+  openDisneyApproval,
+  pauseAccount,
+} from "@/lib/code-controls";
 import { deleteOAuthTokens } from "@/lib/email-oauth";
 import {
   classifyEmailMessage,
@@ -40,6 +59,116 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ConnectedEmailAccount, EmailCodeFilterPolicy, EmailLookupResult, EmailLookupType } from "@/lib/types";
 
 const RATE_LIMIT = { max: 5, windowMinutes: 10 };
+
+function pausedAccountResult(): EmailLookupResult {
+  return { type: "UNKNOWN_BLOCKED", status: "PAUSED", message: DISNEY_PAUSED_MESSAGE };
+}
+
+function hourlyLimitResult(): EmailLookupResult {
+  return { type: "UNKNOWN_BLOCKED", status: "RATE_LIMITED", message: DISNEY_LIMIT_MESSAGE };
+}
+
+async function disneyBlocksBeforeRead(email: string): Promise<EmailLookupResult | null> {
+  if (await isAccountPaused(email)) return pausedAccountResult();
+  if (disneyHourlyLimitReached(await countDisneyDeliveries(email))) return hourlyLimitResult();
+  return null;
+}
+
+async function disneyChangePause(mailboxes: { id: string }[], email: string): Promise<EmailLookupResult | null> {
+  for (const mailbox of mailboxes) {
+    const notices = await findAccountChangeNotices(mailbox).catch(() => []);
+    const notice = notices.find((item) => item.to === email.trim().toLowerCase());
+    if (!notice) continue;
+    const requester = await lastCodeRequester(email);
+    await pauseAccount({
+      email,
+      kind: notice.kind,
+      at: notice.at ?? Date.now(),
+      noticeId: notice.id,
+      requesterName: requester?.name ?? "",
+      requesterKind: requester?.kind ?? "",
+    });
+    return pausedAccountResult();
+  }
+  return null;
+}
+
+async function disneyApprovalOrCode(input: {
+  rule: PlatformCodeRule;
+  platform: { id: string; slug?: string | null; name: string };
+  email: string;
+  requesterKind: "vendedor" | "cliente";
+  requesterId: string;
+  requesterName: string;
+  sellerId: string;
+  customerId?: string;
+  serviceId?: string;
+  type: EmailLookupType;
+  code?: string;
+  link?: string;
+  history?: { code: string; at?: number; link?: string }[];
+}): Promise<{ result: EmailLookupResult; deliveryRecorded: boolean } | null> {
+  if (!isDisneyApprovalPlatform(input.platform) || !input.rule.manualApproval) return null;
+  const approval = await openDisneyApproval({
+    email: input.email,
+    platformId: input.platform.id,
+    platformName: input.platform.name,
+    requesterKind: input.requesterKind,
+    requesterId: input.requesterId,
+    requesterName: input.requesterName,
+    sellerId: input.sellerId,
+    customerId: input.customerId,
+    serviceId: input.serviceId,
+    code: input.code,
+    link: input.link,
+    lookupType: input.type,
+    history: input.history,
+  });
+  if (approval.status === "approved" || approval.status === "delivered") {
+    const claim = await claimDisneyApproval(approval.id, input.requesterId);
+    if (claim.state === "ready") {
+      return {
+        deliveryRecorded: true,
+        result: {
+          type: (claim.item.lookupType || input.type) as EmailLookupType,
+          status: "FOUND",
+          code: claim.item.code || undefined,
+          link: claim.item.link,
+          history: claim.item.history,
+          message: "Código temporal encontrado",
+        },
+      };
+    }
+  }
+  return {
+    deliveryRecorded: false,
+    result: {
+      type: "UNKNOWN_BLOCKED",
+      status: "PENDING_APPROVAL",
+      approvalId: approval.id,
+      message: DISNEY_PENDING_MESSAGE,
+    },
+  };
+}
+
+async function recordSellerEvent(input: { sellerId: string; platformId: string; email: string; result: string; code?: string | null }) {
+  if (!isSupabaseConfigured()) return;
+  const insert = await db()?.from("seller_code_lookups").insert({
+    seller_id: input.sellerId,
+    platform_id: input.platformId || null,
+    email: input.email,
+    code: input.code ?? null,
+    result: input.result,
+  });
+  if (insert?.error) {
+    await db()?.from("seller_code_lookups").insert({
+      seller_id: input.sellerId,
+      platform_id: input.platformId || null,
+      email: input.email,
+      code: input.code ?? null,
+    });
+  }
+}
 
 function revalidateEmailPaths() {
   revalidatePath("/panel/correos");
@@ -384,7 +513,7 @@ async function recordLookup(input: {
   serviceId: string;
   platformId: string;
   mailboxId?: string;
-  result: EmailLookupResult["status"];
+  result: string;
   type: EmailLookupType;
 }) {
   const audit = {
@@ -437,7 +566,10 @@ async function recentLookupCount(customerId: string, serviceId: string) {
   return data?.length ?? 0;
 }
 
-export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLookupResult> {
+export async function lookupAccessCodeAction(
+  serviceId: string,
+  options?: { warningAccepted?: boolean },
+): Promise<EmailLookupResult> {
   const session = await getAppSession();
   requireRole(session, ["customer"]);
   const customerId = session.customerId;
@@ -492,13 +624,47 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     };
   }
 
-  const attempts = await recentLookupCount(customerId, service.id);
-  if (attempts >= RATE_LIMIT.max) {
+  const platform = platforms.find((item) => item.id === service.platformId);
+  const disney = isDisneyPlatform(platform);
+  if (disney && !options?.warningAccepted) {
     return {
       type: "UNKNOWN_BLOCKED",
-      status: "RATE_LIMITED",
-      message: "Has realizado demasiadas consultas. Inténtalo de nuevo en unos minutos.",
+      status: "DENIED",
+      message: "Debes aceptar el aviso para continuar.",
     };
+  }
+  if (disney && options?.warningAccepted) {
+    await recordLookup({
+      sellerId: service.sellerId,
+      customerId,
+      serviceId: service.id,
+      platformId: service.platformId,
+      result: "WARNING_ACCEPTED",
+      type: "LOGIN_CODE",
+    });
+  }
+  if (disney) {
+    const blocked = await disneyBlocksBeforeRead(service.platformEmail);
+    if (blocked) {
+      await recordLookup({
+        sellerId: service.sellerId,
+        customerId,
+        serviceId: service.id,
+        platformId: service.platformId,
+        result: blocked.status,
+        type: "LOGIN_CODE",
+      });
+      return blocked;
+    }
+  } else {
+    const attempts = await recentLookupCount(customerId, service.id);
+    if (attempts >= RATE_LIMIT.max) {
+      return {
+        type: "UNKNOWN_BLOCKED",
+        status: "RATE_LIMITED",
+        message: "Has realizado demasiadas consultas. Inténtalo de nuevo en unos minutos.",
+      };
+    }
   }
 
   // Buzones del vendedor del cliente + buzones generales del administrador (sin vendedor asignado).
@@ -539,7 +705,6 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     loadEmailFilterPolicy(null),
     loadEmailFilterPolicy(service.sellerId),
   ]);
-  const platform = platforms.find((item) => item.id === service.platformId);
   const codeSettings = await loadCodeSettings();
   // Reglas de la plataforma (Administrador → Correos → Reglas de códigos).
   const rule = platformRuleFor(codeSettings, { id: service.platformId, slug: platform?.slug }, globalFilter);
@@ -602,7 +767,13 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     for (const candidate of candidates) {
       // Variante o reenviado: se busca el código enviado a esa dirección exacta.
       const recipient = mailboxMatchesService(candidate.email, serviceEmail) ? undefined : serviceEmail;
-      const current = await readFilteredAccessCode(candidate, policy, platform, recipient);
+      const current = await readFilteredAccessCode(
+        candidate,
+        policy,
+        platform,
+        recipient,
+        disney ? DISNEY_CODE_MAX_AGE_MINUTES : undefined,
+      );
       if (current.status === "found") {
         live = current;
         break;
@@ -678,6 +849,22 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
     };
   }
 
+  if (disney) {
+    const changed = await disneyChangePause(candidates, serviceEmail);
+    if (changed) {
+      await recordLookup({
+        sellerId: service.sellerId,
+        customerId,
+        serviceId: service.id,
+        platformId: service.platformId,
+        mailboxId: mailbox.id,
+        result: "PAUSED",
+        type: "LOGIN_CODE",
+      });
+      return changed;
+    }
+  }
+
   if (live.status === "not_found") {
     await recordLookup({
       sellerId: service.sellerId,
@@ -693,6 +880,38 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
       status: "NOT_FOUND",
       message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
     };
+  }
+
+  if (disney && platform && live.status === "found") {
+    const held = await disneyApprovalOrCode({
+      rule,
+      platform,
+      email: serviceEmail,
+      requesterKind: "cliente",
+      requesterId: customerId,
+      requesterName: session.name || "Cliente",
+      sellerId: service.sellerId,
+      customerId,
+      serviceId: service.id,
+      type: live.type,
+      code: live.code,
+      link: live.link,
+      history: live.history,
+    });
+    if (held) {
+      if (!held.deliveryRecorded) {
+        await recordLookup({
+          sellerId: service.sellerId,
+          customerId,
+          serviceId: service.id,
+          platformId: service.platformId,
+          mailboxId: mailbox.id,
+          result: held.result.status,
+          type: live.type,
+        });
+      }
+      return held.result;
+    }
   }
 
   await recordLookup({
@@ -726,31 +945,42 @@ export async function lookupAccessCodeAction(serviceId: string): Promise<EmailLo
  * que el vendedor ya habilitó en "Mi Bot", aplica el filtro de mensajes y nunca
  * devuelve el contenido del correo, solo el código temporal.
  */
-export async function sellerLookupCodeAction(platformId: string, emailInput: string): Promise<EmailLookupResult> {
-  const result = await sellerLookupCodeInner(platformId, emailInput);
+export async function sellerLookupCodeAction(
+  platformId: string,
+  emailInput: string,
+  options?: { warningAccepted?: boolean },
+): Promise<EmailLookupResult> {
+  const result = await sellerLookupCodeInner(platformId, emailInput, options);
+  const { deliveryRecorded, ...publicResult } = result;
   // Historial: se registra cada solicitud del vendedor (encontrada o no). Si falla, no bloquea al vendedor.
-  try {
-    const session = await getAppSession();
-    const email = String(emailInput ?? "").trim().toLowerCase();
-    if (session.mode !== "demo" && session.sellerId && email) {
-      const row = {
-        seller_id: session.sellerId,
-        platform_id: platformId || null,
-        email,
-        // El código solo se guarda internamente (alerta de Disney); el historial no lo muestra.
-        code: result.status === "FOUND" ? (result.code || (result.link ? "enlace" : null)) : null,
-      };
-      const insert = await db()?.from("seller_code_lookups").insert({ ...row, result: result.status });
-      // Sin la migración 0038 aún no existe la columna "result": se guarda sin ella.
-      if (insert?.error) await db()?.from("seller_code_lookups").insert(row);
+  if (!deliveryRecorded) {
+    try {
+      const session = await getAppSession();
+      const email = String(emailInput ?? "").trim().toLowerCase();
+      if (session.mode !== "demo" && session.sellerId && email) {
+        const row = {
+          seller_id: session.sellerId,
+          platform_id: platformId || null,
+          email,
+          // El código solo se guarda internamente (alerta de Disney); el historial no lo muestra.
+          code: publicResult.status === "FOUND" ? (publicResult.code || (publicResult.link ? "enlace" : null)) : null,
+        };
+        const insert = await db()?.from("seller_code_lookups").insert({ ...row, result: publicResult.status });
+        // Sin la migración 0038 aún no existe la columna "result": se guarda sin ella.
+        if (insert?.error) await db()?.from("seller_code_lookups").insert(row);
+      }
+    } catch {
+      /* sin registro no pasa nada grave */
     }
-  } catch {
-    /* sin registro no pasa nada grave */
   }
-  return result;
+  return publicResult;
 }
 
-async function sellerLookupCodeInner(platformId: string, emailInput: string): Promise<EmailLookupResult> {
+async function sellerLookupCodeInner(
+  platformId: string,
+  emailInput: string,
+  options?: { warningAccepted?: boolean },
+): Promise<EmailLookupResult & { deliveryRecorded?: boolean }> {
   const blocked = (status: EmailLookupResult["status"], message: string): EmailLookupResult => ({
     type: "UNKNOWN_BLOCKED",
     status,
@@ -780,6 +1010,8 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
     return blocked("DENIED", `Los códigos de ${platform.name} están pausados por el administrador.`);
   }
 
+  const disney = isDisneyPlatform(platform);
+
   if (live) {
     const assigned = ownAccounts.some(
       (item) =>
@@ -788,6 +1020,22 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
         item.email.trim().toLowerCase() === email.toLowerCase(),
     );
     if (!assigned) return blocked("DENIED", "Esta cuenta no está asignada a tu panel.");
+  }
+
+  if (disney && !options?.warningAccepted) {
+    return blocked("DENIED", "Debes aceptar el aviso para continuar.");
+  }
+  if (disney && options?.warningAccepted && session.mode !== "demo") {
+    await recordSellerEvent({
+      sellerId,
+      platformId,
+      email: email.toLowerCase(),
+      result: "WARNING_ACCEPTED",
+    });
+  }
+  if (disney) {
+    const blockedDisney = await disneyBlocksBeforeRead(email);
+    if (blockedDisney) return blockedDisney;
   }
 
   const usable = mailboxes.filter(
@@ -836,7 +1084,13 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
     const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
     let current;
     try {
-      current = await readFilteredAccessCode(mailbox, policy, platform, recipient);
+      current = await readFilteredAccessCode(
+        mailbox,
+        policy,
+        platform,
+        recipient,
+        disney ? DISNEY_CODE_MAX_AGE_MINUTES : undefined,
+      );
     } catch {
       failed = true;
       continue;
@@ -865,7 +1119,28 @@ async function sellerLookupCodeInner(platformId: string, emailInput: string): Pr
   if (result.status === "error") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
+  if (disney) {
+    const changed = await disneyChangePause(candidates, email);
+    if (changed) return changed;
+  }
   if (result.status === "not_found") return notFound;
+
+  if (disney) {
+    const held = await disneyApprovalOrCode({
+      rule,
+      platform,
+      email,
+      requesterKind: "vendedor",
+      requesterId: sellerId,
+      requesterName: session.name || "Vendedor",
+      sellerId,
+      type: result.type,
+      code: result.code,
+      link: result.link,
+      history: result.history,
+    });
+    if (held) return { ...held.result, deliveryRecorded: held.deliveryRecorded };
+  }
 
   return {
     type: result.type,

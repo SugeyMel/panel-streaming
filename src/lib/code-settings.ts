@@ -16,6 +16,8 @@ export type PlatformCodeRule = {
   verification: boolean;
   travel: boolean;
   household: boolean;
+  /** Disney Premium / Disney Estándar: el código no se entrega hasta que el admin apruebe. */
+  manualApproval: boolean;
   blockWords: string[];
 };
 
@@ -46,6 +48,7 @@ function cleanRule(value: unknown): PlatformCodeRule | null {
     verification: raw.verification !== false,
     travel: raw.travel !== false,
     household: raw.household === true,
+    manualApproval: raw.manualApproval === true,
     blockWords: cleanWords(raw.blockWords),
   };
 }
@@ -125,6 +128,7 @@ export function platformRuleFor(
     verification: globalPolicy.allowVerificationCode,
     travel: globalPolicy.allowNetflixTravel,
     household: slug.includes("disney") ? settings.allowDisneyHousehold : globalPolicy.allowNetflixHousehold,
+    manualApproval: false,
     blockWords: [],
   };
 }

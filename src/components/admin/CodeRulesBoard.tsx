@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { savePlatformCodeRuleAction } from "@/app/actions/code-settings";
+import { isDisneyApprovalPlatform } from "@/lib/disney-code-policy";
 import type { PlatformCodeRule } from "@/lib/code-settings";
 
 type PlatformItem = { id: string; name: string; slug: string };
@@ -229,6 +230,23 @@ export function CodeRulesBoard({
               </div>
             );
           })}
+
+          {isDisneyApprovalPlatform(platform) ? (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-white">Requiere mi aprobación</p>
+                <p className="text-[10px] leading-tight text-[#FDE68A]">
+                  El vendedor o el cliente ve “Esperando aprobación” hasta que apruebes. Si no respondes en 15 minutos, la solicitud se cancela.
+                </p>
+              </div>
+              <Switch
+                on={rule.manualApproval}
+                disabled={!rule.enabled}
+                onClick={() => update({ manualApproval: !rule.manualApproval })}
+                label="Requiere mi aprobación"
+              />
+            </div>
+          ) : null}
 
           <div className="rounded-lg border border-[#1e293b] px-2.5 py-2">
             <p className="text-xs font-medium text-white">Palabras bloqueadas</p>

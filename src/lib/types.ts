@@ -372,12 +372,14 @@ export type EmailLookupRequest = {
 
 export type EmailLookupResult = {
   type: EmailLookupType;
-  status: "FOUND" | "NOT_FOUND" | "BLOCKED" | "DENIED" | "RATE_LIMITED";
+  status: "FOUND" | "NOT_FOUND" | "BLOCKED" | "DENIED" | "RATE_LIMITED" | "PENDING_APPROVAL" | "PAUSED";
   code?: string;
   /** Netflix "código de acceso temporal": enlace de Netflix donde se ve el código (caduca en 15 min). */
   link?: string;
   /** Códigos recientes (más nuevo primero), con la hora en que llegaron (ms). Incluye el código principal. */
   history?: { code: string; at?: number; link?: string }[];
+  /** Solicitud de Disney que espera Aprobar / Rechazar del administrador. */
+  approvalId?: string;
   safeActionAvailable?: boolean;
   message: string;
 };

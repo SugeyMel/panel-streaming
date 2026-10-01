@@ -232,15 +232,34 @@ export function accountChangeNotice(message: ClassifiableMessage): "password" | 
   const host = domainOf(message.from);
   if (!hostMatches(host, ["disneyplus.com", "disney.com"])) return null;
   const subject = fold(message.subject);
-  const isNotice =
-    subject.includes("cuenta de mydisney actualizada") ||
-    subject.includes("mydisney account updated") ||
-    subject.includes("mydisney account has been updated");
-  if (!isNotice) return null;
+  // El código de acceso único no es un aviso de cambio, aunque el cuerpo hable del correo.
+  if (subject.includes("codigo de acceso unico")) return null;
+  const mentionsAccount = subject.includes("mydisney") || subject.includes("cuenta de disney");
+  const mentionsChange =
+    subject.includes("actualiz") ||
+    subject.includes("updated") ||
+    subject.includes("changed") ||
+    subject.includes("cambio") ||
+    subject.includes("se cambio");
+  if (!mentionsAccount || !mentionsChange) return null;
   const text = fold(`${message.subject} ${message.snippet ?? ""}`);
   if (text.includes("contrasena") || text.includes("password")) return "password";
   if (text.includes("correo") || text.includes("email")) return "email";
   return "account";
+}
+
+/**
+ * Correo de inicio de Disney+: asunto "Tu código de acceso único para Disney+"
+ * (remitente disneyplus@trx.mail2.disneyplus.com). El cuerpo suele mencionar
+ * "dirección de correo electrónico" o "reciente compra"; eso no lo convierte en un aviso de cambio.
+ */
+export function isDisneyLoginCode(message: ClassifiableMessage) {
+  const host = domainOf(message.from);
+  if (!hostMatches(host, ["disneyplus.com", "disney.com", "bamgrid.com", "bamtech.com"])) return false;
+  const subject = fold(message.subject);
+  if (!subject.includes("codigo de acceso unico")) return false;
+  if (includesAny(subject, PASSWORD) || includesAny(subject, EMAIL_CHANGE)) return false;
+  return true;
 }
 
 const LOGIN_SUBJECTS = [
@@ -355,6 +374,23 @@ export function classifyEmailMessage(
       category: "mailbox",
       reason: "Bloqueado: seguridad del buzón (Gmail/Outlook). El cliente no debe ver este mensaje.",
     };
+  }
+  // Disney+ "Tu código de acceso único": el cuerpo menciona el correo o una compra, pero es un código de inicio.
+  // Los avisos reales (asunto de cambio de clave o de correo) no entran aquí.
+  if (isDisneyLoginCode(message)) {
+    return policy.allowLoginCode
+      ? {
+          decision: "allow",
+          type: "LOGIN_CODE",
+          category: "login",
+          reason: "Permitido: código de acceso único de Disney+.",
+        }
+      : {
+          decision: "block",
+          type: "UNKNOWN_BLOCKED",
+          category: "login",
+          reason: "Bloqueado: el código de inicio de sesión está apagado.",
+        };
   }
   if (includesAny(text, EMAIL_CHANGE)) {
     return {
@@ -554,6 +590,18 @@ export function extractAccessCode(text: string) {
   return spaced ? spaced[1].replace(/[  ]/g, "") : undefined;
 }
 
+/** Disney+ manda el código de 6 dígitos en el cuerpo. Se prefiere ese, no un año u otro número. */
+export function extractDisneyAccessCode(text: string) {
+  const matches = [...text.matchAll(/(?<!\d)(\d{6})(?!\d)/g)];
+  if (!matches.length) return extractAccessCode(text);
+  const hint = text.search(/c[oó]digo|code|passcode/i);
+  if (hint >= 0) {
+    const after = matches.find((item) => (item.index ?? 0) >= hint);
+    if (after) return after[1];
+  }
+  return matches[0][1];
+}
+
 export function demoCodeForPlatform(slug: string) {
   const s = slug.toLowerCase();
   if (s.includes("netflix")) return "4827";
@@ -635,9 +683,9 @@ export const FILTER_TEST_PRESETS = [
     slug: "netflix",
   },
   {
-    label: "Disney · código de acceso",
-    from: "disneyplus@mailer.disneyplus.com",
-    subject: "Tu código de inicio de sesión 5510",
+    label: "Disney · código de acceso único",
+    from: "disneyplus@trx.mail2.disneyplus.com",
+    subject: "Tu código de acceso único para Disney+",
     slug: "disney",
   },
   {

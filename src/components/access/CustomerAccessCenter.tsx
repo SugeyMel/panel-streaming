@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { checkDisneyApprovalAction } from "@/app/actions/code-controls";
 import { lookupAccessCodeAction } from "@/app/actions/email-codes";
+import { DisneyCodeWarning } from "@/components/access/DisneyCodeWarning";
 import { CustomerSquareLogo } from "@/components/cliente/CustomerSquareLogo";
 import {
   CalendarIcon,
@@ -14,11 +16,14 @@ import {
   MailIcon,
   PinPadIcon,
   UsersIcon,
+  WhatsAppIcon,
 } from "@/components/icons";
+import { isDisneyPlatform } from "@/lib/disney-code-policy";
 import { daysRemaining, formatDate, serviceStatusFromDates } from "@/lib/format";
 import { parseProfileSlot } from "@/lib/inventory-matrix";
 import { colorWithAlpha, platformCardTheme, platformDisplayName } from "@/lib/platform-logos";
 import type { EmailLookupResult, Platform, Subscription } from "@/lib/types";
+import { waLink } from "@/lib/whatsapp";
 
 export function CustomerAccessCenter({
   services,
@@ -26,12 +31,15 @@ export function CustomerAccessCenter({
   customerId: _customerId,
   sellerId: _sellerId,
   enabledMailboxEmails: _enabledMailboxEmails = [],
+  providerWhatsapp = "",
 }: {
   services: Subscription[];
   platforms: Platform[];
   customerId: string;
   sellerId: string;
   enabledMailboxEmails?: string[];
+  /** WhatsApp del vendedor (o del administrador) cuando se alcanza el límite. */
+  providerWhatsapp?: string;
 }) {
   const [filter, setFilter] = useState("todos");
   const [copied, setCopied] = useState<string | null>(null);
@@ -63,10 +71,10 @@ export function CustomerAccessCenter({
     }
   }
 
-  async function requestCode(subscription: Subscription) {
+  async function requestCode(subscription: Subscription, warningAccepted = false) {
     setLoadingId(subscription.id);
     try {
-      const next = await lookupAccessCodeAction(subscription.id);
+      const next = await lookupAccessCodeAction(subscription.id, { warningAccepted });
       setResults((current) => ({ ...current, [subscription.id]: next }));
     } catch {
       setResults((current) => ({
@@ -152,11 +160,13 @@ export function CustomerAccessCenter({
                 revealed={Boolean(revealed[subscription.id])}
                 loading={loadingId === subscription.id}
                 result={results[subscription.id]}
+                providerWhatsapp={providerWhatsapp}
                 onCopy={copyText}
                 onToggleReveal={() =>
                   setRevealed((current) => ({ ...current, [subscription.id]: !current[subscription.id] }))
                 }
-                onRequestCode={() => requestCode(subscription)}
+                onRequestCode={(warningAccepted) => requestCode(subscription, warningAccepted)}
+                onResult={(next) => setResults((current) => ({ ...current, [subscription.id]: next }))}
               />
             );
           })}
@@ -205,9 +215,11 @@ function AccessCard({
   revealed,
   loading,
   result,
+  providerWhatsapp = "",
   onCopy,
   onToggleReveal,
   onRequestCode,
+  onResult,
 }: {
   subscription: Subscription;
   platform?: Platform;
@@ -215,10 +227,30 @@ function AccessCard({
   revealed: boolean;
   loading: boolean;
   result?: EmailLookupResult;
+  providerWhatsapp?: string;
   onCopy: (key: string, text: string) => void;
   onToggleReveal: () => void;
-  onRequestCode: () => void;
+  onRequestCode: (warningAccepted: boolean) => void;
+  onResult: (next: EmailLookupResult) => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const disney = isDisneyPlatform(platform);
+  const onResultRef = useRef(onResult);
+  onResultRef.current = onResult;
+
+  useEffect(() => {
+    if (result?.status !== "PENDING_APPROVAL" || !result.approvalId) return;
+    const approvalId = result.approvalId;
+    const timer = window.setInterval(async () => {
+      try {
+        const next = await checkDisneyApprovalAction(approvalId);
+        if (next.status !== "PENDING_APPROVAL") onResultRef.current(next);
+      } catch {
+        /* se reintenta en el siguiente ciclo */
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [result?.approvalId, result?.status]);
   const title = platformDisplayName(platform ?? subscription.platformId) || platform?.name || "Servicio";
   const theme = platformCardTheme(platform ?? subscription.platformId);
   const status = serviceStatusFromDates(subscription.endDate, subscription.status);
@@ -332,7 +364,13 @@ function AccessCard({
         </button>
         <button
           type="button"
-          onClick={onRequestCode}
+          onClick={() => {
+            if (disney) {
+              setConfirming(true);
+              return;
+            }
+            onRequestCode(false);
+          }}
           disabled={loading || !email}
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: theme.to }}
@@ -342,10 +380,30 @@ function AccessCard({
         </button>
       </div>
 
+      {confirming ? (
+        <DisneyCodeWarning
+          onAccept={() => {
+            setConfirming(false);
+            onRequestCode(true);
+          }}
+        />
+      ) : null}
+
       {result ? (
         <div className="mt-2 rounded-xl border border-white/10 bg-black/30 px-3 py-2.5">
           <p className="text-[11px] font-medium text-[#C4B5FD]">Resultado</p>
           <p className="mt-0.5 text-sm text-white">{result.message}</p>
+          {result.status === "RATE_LIMITED" && providerWhatsapp ? (
+            <a
+              href={waLink(providerWhatsapp, "Hola, alcancé el límite de códigos. ¿Me puedes ayudar?")}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#16A34A] px-3 text-xs font-semibold text-white"
+            >
+              <WhatsAppIcon className="h-4 w-4" />
+              WhatsApp
+            </a>
+          ) : null}
           {result.code ? (
             <p className="mt-1 text-2xl font-semibold tracking-[0.2em] text-white">{result.code}</p>
           ) : null}
@@ -368,7 +426,9 @@ function AccessCard({
           ) : null}
           {result.status === "FOUND" && result.history && result.history.length > 1 ? (
             <div className="mt-2 border-t border-white/10 pt-2">
-              <p className="text-[11px] font-medium text-[#94A3B8]">Códigos de los últimos 30 minutos</p>
+              <p className="text-[11px] font-medium text-[#94A3B8]">
+                {disney ? "Códigos de los últimos 15 minutos" : "Códigos de los últimos 30 minutos"}
+              </p>
               <ul className="mt-1 space-y-1">
                 {result.history.map((item, index) => (
                   <li key={`${item.code}-${index}`} className="flex items-center justify-between gap-2 text-[12px]">

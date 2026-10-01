@@ -1,6 +1,8 @@
 import { AccountChangeAlerts } from "@/components/admin/AccountChangeAlerts";
+import { CodeApprovalAlerts } from "@/components/admin/CodeApprovalAlerts";
 import { AdminHomeDashboard } from "@/components/admin/AdminHomeDashboard";
 import { loadAccountChangeAlerts } from "@/lib/account-alerts";
+import { listPendingApprovals } from "@/lib/code-controls";
 import { getAppSession } from "@/lib/auth/get-session";
 import { loadCustomers, loadSellers, loadWholesaleSales } from "@/lib/data/queries";
 import {
@@ -12,12 +14,13 @@ import {
 } from "@/lib/admin-home";
 
 export default async function AdminDashboardPage() {
-  const [session, sellers, customers, wholesaleSales, accountAlerts] = await Promise.all([
+  const [session, sellers, customers, wholesaleSales, accountAlerts, pendingApprovals] = await Promise.all([
     getAppSession(),
     loadSellers(),
     loadCustomers(),
     loadWholesaleSales(),
     loadAccountChangeAlerts(),
+    listPendingApprovals(),
   ]);
 
   const data: AdminHomePayload = {
@@ -40,6 +43,7 @@ export default async function AdminDashboardPage() {
 
   return (
     <>
+      <CodeApprovalAlerts items={pendingApprovals} />
       <AccountChangeAlerts alerts={accountAlerts} />
       <AdminHomeDashboard data={data} />
     </>

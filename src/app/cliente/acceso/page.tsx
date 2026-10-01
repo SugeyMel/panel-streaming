@@ -1,7 +1,7 @@
 import { CustomerAccessCenter } from "@/components/access/CustomerAccessCenter";
-import { customerScope, loadConnectedEmails, loadPlatforms, loadServices } from "@/lib/data/queries";
+import { customerScope, loadConnectedEmails, loadPlatforms, loadSellerById, loadServices } from "@/lib/data/queries";
 import { serviceStatusFromDates } from "@/lib/format";
-import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
+import { loadAdminWhatsapp, sellerClientCodesEnabled } from "@/lib/seller-permissions";
 
 export default async function CustomerAccessPage() {
   const { customerId } = await customerScope();
@@ -24,7 +24,11 @@ export default async function CustomerAccessPage() {
       </div>
     );
   }
-  const mailboxes = sellerId ? await loadConnectedEmails(sellerId) : [];
+  const [mailboxes, seller, adminWhatsapp] = await Promise.all([
+    sellerId ? loadConnectedEmails(sellerId) : Promise.resolve([]),
+    sellerId ? loadSellerById(sellerId) : Promise.resolve(null),
+    loadAdminWhatsapp().catch(() => ""),
+  ]);
   const enabledMailboxEmails = mailboxes.filter((item) => item.codesEnabled).map((item) => item.email);
 
   return (
@@ -34,6 +38,7 @@ export default async function CustomerAccessPage() {
       customerId={customerId ?? ""}
       sellerId={sellerId}
       enabledMailboxEmails={enabledMailboxEmails}
+      providerWhatsapp={seller?.whatsapp || adminWhatsapp}
     />
   );
 }
