@@ -11,7 +11,12 @@ import {
 } from "@/lib/data/queries";
 import { loadCodeSettings, applyPlatformRule, platformCodesEnabled, platformRuleFor, type PlatformCodeRule } from "@/lib/code-settings";
 import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
-import { findAccountChangeNotices, readFilteredAccessCode, type MailboxReadResult } from "@/lib/email-mailbox-read";
+import {
+  findAccountChangeNotices,
+  readFilteredAccessCode,
+  type MailboxReadDebug,
+  type MailboxReadResult,
+} from "@/lib/email-mailbox-read";
 import {
   DISNEY_CODE_MAX_AGE_MINUTES,
   DISNEY_EXPIRED_MESSAGE,
@@ -994,6 +999,16 @@ export async function sellerLookupCodeAction(
   return publicResult;
 }
 
+function formatMailboxDebug(debug: MailboxReadDebug | undefined) {
+  if (!debug) return "sin lectura";
+  const code = debug.code ? `sí${debug.codeAgeMinutes == null ? "" : ` ${debug.codeAgeMinutes} min`}` : "no";
+  const blocked =
+    debug.blocked > 0
+      ? ` bloqueados=${debug.blocked} motivo=${debug.blockedReason ?? ""} asunto=${debug.blockedSubject ?? ""}`
+      : " bloqueados=0";
+  return `gmail=${debug.gmail} fallback=${debug.fallback ? "sí" : "no"} trasFiltrar=${debug.afterFilter}${blocked} código=${code}`;
+}
+
 async function sellerLookupCodeInner(
   platformId: string,
   emailInput: string,
@@ -1098,6 +1113,7 @@ async function sellerLookupCodeInner(
   let result: Awaited<ReturnType<typeof readFilteredAccessCode>> | undefined;
   let sourceMailbox: (typeof candidates)[number] | undefined;
   let failed = false;
+  const diagnostics: string[] = [];
   for (const mailbox of candidates) {
     // Si el correo es una variante o reenviado se busca el código enviado a esa dirección exacta.
     const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
@@ -1106,7 +1122,13 @@ async function sellerLookupCodeInner(
       current = await readFilteredAccessCode(mailbox, policy, platform, recipient);
     } catch {
       failed = true;
+      diagnostics.push(`${mailbox.email}: error`);
       continue;
+    }
+    if (current.status === "found" || current.status === "not_found") {
+      diagnostics.push(`${mailbox.email}: ${formatMailboxDebug(current.debug)}`);
+    } else {
+      diagnostics.push(`${mailbox.email}: ${current.status}`);
     }
     if (current.status === "found") {
       result = current;
@@ -1133,14 +1155,18 @@ async function sellerLookupCodeInner(
   if (result.status === "error") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
+  const diagnosedNotFound = blocked(
+    "NOT_FOUND",
+    `${notFound.message ?? ""} [${candidates.length} buzones: ${diagnostics.join(" | ")}]`,
+  );
   if (disney && result.status === "found" && sourceMailbox) {
     const changed = await disneyChangePause(sourceMailbox, email);
     if (changed) return changed;
     const limited = limitDisneyFoundCode(result);
-    if (limited.status !== "found") return notFound;
+    if (limited.status !== "found") return diagnosedNotFound;
     result = limited;
   }
-  if (result.status === "not_found") return notFound;
+  if (result.status === "not_found") return diagnosedNotFound;
 
   if (disney) {
     const held = await disneyApprovalOrCode({

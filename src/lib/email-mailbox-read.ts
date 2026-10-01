@@ -10,6 +10,18 @@ import {
 import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/lib/email-oauth";
 import type { EmailCodeFilterPolicy, EmailLookupType, Platform } from "@/lib/types";
 
+/** Datos de la lectura para diagnosticar un «no encontrado». No cambia qué código se entrega. */
+export type MailboxReadDebug = {
+  gmail: number;
+  fallback: boolean;
+  afterFilter: number;
+  blocked: number;
+  blockedReason?: string;
+  blockedSubject?: string;
+  code: boolean;
+  codeAgeMinutes?: number;
+};
+
 export type MailboxReadResult =
   | {
       status: "found";
@@ -17,8 +29,9 @@ export type MailboxReadResult =
       code: string;
       link?: string;
       history: { code: string; at?: number; link?: string }[];
+      debug?: MailboxReadDebug;
     }
-  | { status: "not_found" }
+  | { status: "not_found"; debug?: MailboxReadDebug }
   | { status: "not_connected" }
   | { status: "reconnect" }
   | { status: "error"; message: string };
@@ -88,7 +101,10 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
   return { message: (await response.json()) as GmailMessage };
 }
 
-async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readGmail(
+  accessToken: string,
+  recipient?: string,
+): Promise<{ messages: ClassifiableMessage[]; gmail: number; fallback: boolean; afterFilter: number } | "unauthorized"> {
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("maxResults", "25");
   // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
@@ -102,7 +118,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
   });
   if (listRes.status === 401 || listRes.status === 403) return "unauthorized";
   const list = (await listRes.json()) as GmailList;
-  if (!listRes.ok) return [];
+  if (!listRes.ok) return { messages: [], gmail: 0, fallback: false, afterFilter: 0 };
   let messages = list.messages ?? [];
   const at = safeRecipient?.lastIndexOf("@") ?? -1;
   const domain = safeRecipient && at > 0 ? safeRecipient.slice(at + 1).toLowerCase() : "";
@@ -148,7 +164,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
       receivedAt: Number(message.internalDate) || undefined,
     });
   }
-  return out;
+  return { messages: out, gmail: messages.length, fallback: filterToLocally, afterFilter: out.length };
 }
 
 async function gmailFullText(accessToken: string, id: string) {
@@ -223,15 +239,24 @@ export async function readFilteredAccessCode(
     return { status: "reconnect" };
   }
 
-  const raw =
+  const read =
     access.token.provider === "google"
       ? await readGmail(access.token.accessToken, recipient)
       : await readMicrosoft(access.token.accessToken, recipient);
 
-  if (raw === "unauthorized") {
+  if (read === "unauthorized") {
     await markMailboxReconnect(mailbox.id, mailbox.sellerId);
     return { status: "reconnect" };
   }
+
+  const raw = Array.isArray(read) ? read : read.messages;
+  const debug: MailboxReadDebug = {
+    gmail: Array.isArray(read) ? 0 : read.gmail,
+    fallback: Array.isArray(read) ? false : read.fallback,
+    afterFilter: Array.isArray(read) ? raw.length : read.afterFilter,
+    blocked: 0,
+    code: false,
+  };
 
   await touchMailboxSync(mailbox.id, mailbox.sellerId);
 
@@ -241,7 +266,14 @@ export async function readFilteredAccessCode(
   for (const message of raw) {
     if (history.length >= CODE_HISTORY_MAX) break;
     const verdict = classifyEmailMessage(message, policy, platform);
-    if (verdict.decision !== "allow") continue;
+    if (verdict.decision !== "allow") {
+      debug.blocked += 1;
+      if (!debug.blockedReason) {
+        debug.blockedReason = verdict.reason;
+        debug.blockedSubject = message.subject;
+      }
+      continue;
+    }
     // Netflix "código de acceso temporal" o "cambiar hogar": no traen número, se entrega el enlace del botón.
     if (verdict.category === "travel_link" || verdict.category === "household_link") {
       if (!message.id) continue;
@@ -255,6 +287,10 @@ export async function readFilteredAccessCode(
       }
       const link = extractNetflixActionLink(full.raw, verdict.category === "travel_link" ? "travel" : "household");
       if (!link || history.some((item) => item.link === link)) continue;
+      if (!debug.code) {
+        debug.code = true;
+        if (message.receivedAt) debug.codeAgeMinutes = Math.max(0, Math.round((Date.now() - message.receivedAt) / 60000));
+      }
       if (!firstType) firstType = verdict.type;
       history.push({ code: "", link, at: message.receivedAt });
       continue;
@@ -275,15 +311,19 @@ export async function readFilteredAccessCode(
       code = pickCode(full.text);
     }
     if (!code) continue;
+    if (!debug.code) {
+      debug.code = true;
+      if (message.receivedAt) debug.codeAgeMinutes = Math.max(0, Math.round((Date.now() - message.receivedAt) / 60000));
+    }
     if (history.some((item) => item.code && item.code === code)) continue;
     if (!firstType) firstType = verdict.type;
     history.push({ code, at: message.receivedAt });
   }
 
   if (history.length > 0 && firstType) {
-    return { status: "found", type: firstType, code: history[0].code, link: history[0].link, history };
+    return { status: "found", type: firstType, code: history[0].code, link: history[0].link, history, debug };
   }
-  return { status: "not_found" };
+  return { status: "not_found", debug };
 }
 
 export type AccountChangeNotice = {
