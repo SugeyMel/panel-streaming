@@ -1,4 +1,5 @@
 import { lastCodeRequester, listPausedAccounts, pauseAccount } from "@/lib/code-controls";
+import { DISNEY_NOTICE_MAILBOX } from "@/lib/disney-code-policy";
 import { loadConnectedEmails } from "@/lib/data/queries";
 import { findAccountChangeNotices } from "@/lib/email-mailbox-read";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -25,7 +26,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T) {
 export async function loadAccountChangeAlerts(): Promise<AccountChangeAlert[]> {
   if (!isSupabaseConfigured()) return [];
   try {
-    const mailboxes = (await loadConnectedEmails()).filter((item) => item.codesEnabled);
+    const mailboxes = (await loadConnectedEmails()).filter(
+      (item) => item.codesEnabled && item.email.trim().toLowerCase() === DISNEY_NOTICE_MAILBOX,
+    );
     const found = await Promise.all(
       mailboxes.map((mailbox) => withTimeout(findAccountChangeNotices(mailbox).catch(() => []), 6000, [])),
     );

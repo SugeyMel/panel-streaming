@@ -88,17 +88,13 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
   return { message: (await response.json()) as GmailMessage };
 }
 
-async function readGmail(
-  accessToken: string,
-  recipient?: string,
-  maxAgeMinutes = CODE_MAX_AGE_MINUTES,
-): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("maxResults", "25");
   // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
   const safeRecipient = recipient?.replace(/[^a-z0-9@._+-]/gi, "");
   // Solo mensajes recientes: un código de hace una hora ya no sirve y no debe mostrarse.
-  const afterEpoch = Math.floor((Date.now() - maxAgeMinutes * 60 * 1000) / 1000);
+  const afterEpoch = Math.floor((Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000) / 1000);
   listUrl.searchParams.set("q", safeRecipient ? `after:${afterEpoch} to:${safeRecipient}` : `after:${afterEpoch}`);
   const listRes = await fetch(listUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -151,12 +147,8 @@ async function microsoftFullText(accessToken: string, id: string) {
   return { unauthorized: false as const, text: text.slice(0, 8000), raw };
 }
 
-async function readMicrosoft(
-  accessToken: string,
-  recipient?: string,
-  maxAgeMinutes = CODE_MAX_AGE_MINUTES,
-): Promise<ClassifiableMessage[] | "unauthorized"> {
-  const since = Date.now() - maxAgeMinutes * 60 * 1000;
+async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+  const since = Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000;
   const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
   url.searchParams.set("$top", "25");
   url.searchParams.set("$orderby", "receivedDateTime desc");
@@ -196,7 +188,6 @@ export async function readFilteredAccessCode(
   policy: EmailCodeFilterPolicy,
   platform?: Pick<Platform, "slug" | "name"> | null,
   recipient?: string,
-  maxAgeMinutes = CODE_MAX_AGE_MINUTES,
 ): Promise<MailboxReadResult> {
   const access = await getValidAccessToken(mailbox.id);
   if (!access.ok) {
@@ -206,8 +197,8 @@ export async function readFilteredAccessCode(
 
   const raw =
     access.token.provider === "google"
-      ? await readGmail(access.token.accessToken, recipient, maxAgeMinutes)
-      : await readMicrosoft(access.token.accessToken, recipient, maxAgeMinutes);
+      ? await readGmail(access.token.accessToken, recipient)
+      : await readMicrosoft(access.token.accessToken, recipient);
 
   if (raw === "unauthorized") {
     await markMailboxReconnect(mailbox.id, mailbox.sellerId);

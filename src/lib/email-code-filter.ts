@@ -98,6 +98,47 @@ function fold(value: string) {
     .trim();
 }
 
+/** =?UTF-8?Q?Tu_c=C3=B3digo_de_acceso_=C3=BAnico_para_Disney+?= → texto normal. */
+function decodeMimeHeader(value: string) {
+  if (!value.includes("=?")) return value;
+  const joined = value.replace(/\?=\s+=\?/g, "?==?");
+  return joined.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (_all, charset: string, encoding: string, text: string) => {
+    try {
+      const bytes = encoding.toUpperCase() === "B" ? bytesFromBase64(text) : decodeQEncoding(text);
+      return new TextDecoder(charset.trim() || "utf-8").decode(bytes);
+    } catch {
+      return text.replace(/_/g, " ");
+    }
+  });
+}
+
+function decodeQEncoding(text: string) {
+  const bytes: number[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "_") {
+      bytes.push(0x20);
+    } else if (char === "=" && /^[0-9A-Fa-f]{2}$/.test(text.slice(i + 1, i + 3))) {
+      bytes.push(parseInt(text.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(char.charCodeAt(0));
+    }
+  }
+  return Uint8Array.from(bytes);
+}
+
+function bytesFromBase64(text: string) {
+  const binary = atob(text);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function subjectText(subject: string) {
+  return fold(decodeMimeHeader(subject));
+}
+
 function domainOf(from: string) {
   const match = /@([^>\s]+)/.exec(from.toLowerCase());
   return (match?.[1] ?? from.toLowerCase()).replace(/[>"]/g, "");
@@ -231,7 +272,7 @@ const OWNERSHIP = [
 export function accountChangeNotice(message: ClassifiableMessage): "password" | "email" | "account" | null {
   const host = domainOf(message.from);
   if (!hostMatches(host, ["disneyplus.com", "disney.com"])) return null;
-  const subject = fold(message.subject);
+  const subject = subjectText(message.subject);
   // El código de acceso único no es un aviso de cambio, aunque el cuerpo hable del correo.
   if (subject.includes("codigo de acceso unico")) return null;
   const mentionsAccount = subject.includes("mydisney") || subject.includes("cuenta de disney");
@@ -242,7 +283,7 @@ export function accountChangeNotice(message: ClassifiableMessage): "password" | 
     subject.includes("cambio") ||
     subject.includes("se cambio");
   if (!mentionsAccount || !mentionsChange) return null;
-  const text = fold(`${message.subject} ${message.snippet ?? ""}`);
+  const text = fold(`${decodeMimeHeader(message.subject)} ${message.snippet ?? ""}`);
   if (text.includes("contrasena") || text.includes("password")) return "password";
   if (text.includes("correo") || text.includes("email")) return "email";
   return "account";
@@ -256,7 +297,7 @@ export function accountChangeNotice(message: ClassifiableMessage): "password" | 
 export function isDisneyLoginCode(message: ClassifiableMessage) {
   const host = domainOf(message.from);
   if (!hostMatches(host, ["disneyplus.com", "disney.com", "bamgrid.com", "bamtech.com"])) return false;
-  const subject = fold(message.subject);
+  const subject = subjectText(message.subject);
   if (!subject.includes("codigo de acceso unico")) return false;
   if (includesAny(subject, PASSWORD) || includesAny(subject, EMAIL_CHANGE)) return false;
   return true;
@@ -364,7 +405,7 @@ export function classifyEmailMessage(
 ): MessageVerdict {
   const from = fold(message.from);
   const host = domainOf(message.from);
-  const text = fold(`${message.subject} ${message.snippet ?? ""}`);
+  const text = fold(`${decodeMimeHeader(message.subject)} ${message.snippet ?? ""}`);
   const extra = policy.extraBlockKeywords.map(fold).filter(Boolean);
 
   if (isMailboxSecurity(from, host, text)) {

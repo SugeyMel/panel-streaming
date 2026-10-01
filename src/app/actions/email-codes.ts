@@ -11,9 +11,10 @@ import {
 } from "@/lib/data/queries";
 import { loadCodeSettings, applyPlatformRule, platformCodesEnabled, platformRuleFor, type PlatformCodeRule } from "@/lib/code-settings";
 import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
-import { findAccountChangeNotices, readFilteredAccessCode } from "@/lib/email-mailbox-read";
+import { findAccountChangeNotices, readFilteredAccessCode, type MailboxReadResult } from "@/lib/email-mailbox-read";
 import {
   DISNEY_CODE_MAX_AGE_MINUTES,
+  DISNEY_NOTICE_MAILBOX,
   DISNEY_EXPIRED_MESSAGE,
   DISNEY_LIMIT_MESSAGE,
   DISNEY_PAUSED_MESSAGE,
@@ -74,23 +75,29 @@ async function disneyBlocksBeforeRead(email: string): Promise<EmailLookupResult 
   return null;
 }
 
-async function disneyChangePause(mailboxes: { id: string }[], email: string): Promise<EmailLookupResult | null> {
-  for (const mailbox of mailboxes) {
-    const notices = await findAccountChangeNotices(mailbox).catch(() => []);
-    const notice = notices.find((item) => item.to === email.trim().toLowerCase());
-    if (!notice) continue;
-    const requester = await lastCodeRequester(email);
-    await pauseAccount({
-      email,
-      kind: notice.kind,
-      at: notice.at ?? Date.now(),
-      noticeId: notice.id,
-      requesterName: requester?.name ?? "",
-      requesterKind: requester?.kind ?? "",
-    });
-    return pausedAccountResult();
-  }
-  return null;
+function limitDisneyFoundCode(live: Extract<MailboxReadResult, { status: "found" }>): MailboxReadResult {
+  const cutoff = Date.now() - DISNEY_CODE_MAX_AGE_MINUTES * 60 * 1000;
+  const history = live.history.filter((item) => item.at == null || item.at >= cutoff);
+  if (!history.length) return { status: "not_found" };
+  return { ...live, code: history[0].code, link: history[0].link, history };
+}
+
+async function disneyChangePause(mailboxes: { id: string; email: string }[], email: string): Promise<EmailLookupResult | null> {
+  const mailbox = mailboxes.find((item) => item.email.trim().toLowerCase() === DISNEY_NOTICE_MAILBOX);
+  if (!mailbox) return null;
+  const notices = await findAccountChangeNotices(mailbox).catch(() => []);
+  const notice = notices.find((item) => item.to === email.trim().toLowerCase());
+  if (!notice) return null;
+  const requester = await lastCodeRequester(email);
+  await pauseAccount({
+    email,
+    kind: notice.kind,
+    at: notice.at ?? Date.now(),
+    noticeId: notice.id,
+    requesterName: requester?.name ?? "",
+    requesterKind: requester?.kind ?? "",
+  });
+  return pausedAccountResult();
 }
 
 async function disneyApprovalOrCode(input: {
@@ -767,13 +774,7 @@ export async function lookupAccessCodeAction(
     for (const candidate of candidates) {
       // Variante o reenviado: se busca el código enviado a esa dirección exacta.
       const recipient = mailboxMatchesService(candidate.email, serviceEmail) ? undefined : serviceEmail;
-      const current = await readFilteredAccessCode(
-        candidate,
-        policy,
-        platform,
-        recipient,
-        disney ? DISNEY_CODE_MAX_AGE_MINUTES : undefined,
-      );
+      const current = await readFilteredAccessCode(candidate, policy, platform, recipient);
       if (current.status === "found") {
         live = current;
         break;
@@ -847,6 +848,27 @@ export async function lookupAccessCodeAction(
       status: "DENIED",
       message: "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.",
     };
+  }
+
+  if (disney && live.status === "found") {
+    const limited = limitDisneyFoundCode(live);
+    if (limited.status !== "found") {
+      await recordLookup({
+        sellerId: service.sellerId,
+        customerId,
+        serviceId: service.id,
+        platformId: service.platformId,
+        mailboxId: mailbox.id,
+        result: "NOT_FOUND",
+        type: "UNKNOWN_BLOCKED",
+      });
+      return {
+        type: "UNKNOWN_BLOCKED",
+        status: "NOT_FOUND",
+        message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
+      };
+    }
+    live = limited;
   }
 
   if (disney) {
@@ -1084,13 +1106,7 @@ async function sellerLookupCodeInner(
     const recipient = mailboxMatchesService(mailbox.email, email) ? undefined : email;
     let current;
     try {
-      current = await readFilteredAccessCode(
-        mailbox,
-        policy,
-        platform,
-        recipient,
-        disney ? DISNEY_CODE_MAX_AGE_MINUTES : undefined,
-      );
+      current = await readFilteredAccessCode(mailbox, policy, platform, recipient);
     } catch {
       failed = true;
       continue;
@@ -1118,6 +1134,11 @@ async function sellerLookupCodeInner(
   }
   if (result.status === "error") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
+  }
+  if (disney && result.status === "found") {
+    const limited = limitDisneyFoundCode(result);
+    if (limited.status !== "found") return notFound;
+    result = limited;
   }
   if (disney) {
     const changed = await disneyChangePause(candidates, email);
