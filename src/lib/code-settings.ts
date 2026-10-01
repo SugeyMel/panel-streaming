@@ -135,20 +135,19 @@ export function platformRuleFor(
 
 /**
  * Aplica la regla de la plataforma sobre el filtro combinado (general + vendedor).
- * La administradora decide con la regla; el vendedor solo puede restringir inicio/verificación/viaje
- * y sumar palabras bloqueadas. "Actualizar hogar" lo decide solo la administradora.
+ * La regla de la administradora decide inicio, verificación, viaje y "Actualizar hogar".
+ * El vendedor solo puede sumar palabras bloqueadas.
  */
 export function applyPlatformRule(
   merged: EmailCodeFilterPolicy,
   sellerPolicy: EmailCodeFilterPolicy | null,
   rule: PlatformCodeRule,
 ): EmailCodeFilterPolicy {
-  const seller = sellerPolicy ?? merged;
   return {
     ...merged,
-    allowLoginCode: rule.login && seller.allowLoginCode,
-    allowVerificationCode: rule.verification && seller.allowVerificationCode,
-    allowNetflixTravel: rule.travel && seller.allowNetflixTravel,
+    allowLoginCode: rule.login,
+    allowVerificationCode: rule.verification,
+    allowNetflixTravel: rule.travel,
     allowNetflixHousehold: rule.household,
     allowDisneyHousehold: rule.household,
     extraBlockKeywords: [
