@@ -14,7 +14,6 @@ import { sellerClientCodesEnabled } from "@/lib/seller-permissions";
 import { findAccountChangeNotices, readFilteredAccessCode, type MailboxReadResult } from "@/lib/email-mailbox-read";
 import {
   DISNEY_CODE_MAX_AGE_MINUTES,
-  DISNEY_NOTICE_MAILBOX,
   DISNEY_EXPIRED_MESSAGE,
   DISNEY_LIMIT_MESSAGE,
   DISNEY_PAUSED_MESSAGE,
@@ -82,9 +81,7 @@ function limitDisneyFoundCode(live: Extract<MailboxReadResult, { status: "found"
   return { ...live, code: history[0].code, link: history[0].link, history };
 }
 
-async function disneyChangePause(mailboxes: { id: string; email: string }[], email: string): Promise<EmailLookupResult | null> {
-  const mailbox = mailboxes.find((item) => item.email.trim().toLowerCase() === DISNEY_NOTICE_MAILBOX);
-  if (!mailbox) return null;
+async function disneyChangePause(mailbox: { id: string }, email: string): Promise<EmailLookupResult | null> {
   const notices = await findAccountChangeNotices(mailbox).catch(() => []);
   const notice = notices.find((item) => item.to === email.trim().toLowerCase());
   if (!notice) return null;
@@ -770,6 +767,7 @@ export async function lookupAccessCodeAction(
   }
 
   let live: Awaited<ReturnType<typeof readFilteredAccessCode>> | undefined;
+  let sourceMailbox = mailbox;
   try {
     for (const candidate of candidates) {
       // Variante o reenviado: se busca el código enviado a esa dirección exacta.
@@ -777,6 +775,7 @@ export async function lookupAccessCodeAction(
       const current = await readFilteredAccessCode(candidate, policy, platform, recipient);
       if (current.status === "found") {
         live = current;
+        sourceMailbox = candidate;
         break;
       }
       if (!live || live.status === "not_connected" || live.status === "reconnect") live = current;
@@ -851,6 +850,19 @@ export async function lookupAccessCodeAction(
   }
 
   if (disney && live.status === "found") {
+    const changed = await disneyChangePause(sourceMailbox, serviceEmail);
+    if (changed) {
+      await recordLookup({
+        sellerId: service.sellerId,
+        customerId,
+        serviceId: service.id,
+        platformId: service.platformId,
+        mailboxId: sourceMailbox.id,
+        result: "PAUSED",
+        type: "LOGIN_CODE",
+      });
+      return changed;
+    }
     const limited = limitDisneyFoundCode(live);
     if (limited.status !== "found") {
       await recordLookup({
@@ -869,22 +881,6 @@ export async function lookupAccessCodeAction(
       };
     }
     live = limited;
-  }
-
-  if (disney) {
-    const changed = await disneyChangePause(candidates, serviceEmail);
-    if (changed) {
-      await recordLookup({
-        sellerId: service.sellerId,
-        customerId,
-        serviceId: service.id,
-        platformId: service.platformId,
-        mailboxId: mailbox.id,
-        result: "PAUSED",
-        type: "LOGIN_CODE",
-      });
-      return changed;
-    }
   }
 
   if (live.status === "not_found") {
@@ -1100,6 +1096,7 @@ async function sellerLookupCodeInner(
   }
 
   let result: Awaited<ReturnType<typeof readFilteredAccessCode>> | undefined;
+  let sourceMailbox: (typeof candidates)[number] | undefined;
   let failed = false;
   for (const mailbox of candidates) {
     // Si el correo es una variante o reenviado se busca el código enviado a esa dirección exacta.
@@ -1113,6 +1110,7 @@ async function sellerLookupCodeInner(
     }
     if (current.status === "found") {
       result = current;
+      sourceMailbox = mailbox;
       break;
     }
     // Se conserva el resultado más útil: con varios buzones, "no hay código" pesa más que "no conectado".
@@ -1135,14 +1133,12 @@ async function sellerLookupCodeInner(
   if (result.status === "error") {
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
-  if (disney && result.status === "found") {
+  if (disney && result.status === "found" && sourceMailbox) {
+    const changed = await disneyChangePause(sourceMailbox, email);
+    if (changed) return changed;
     const limited = limitDisneyFoundCode(result);
     if (limited.status !== "found") return notFound;
     result = limited;
-  }
-  if (disney) {
-    const changed = await disneyChangePause(candidates, email);
-    if (changed) return changed;
   }
   if (result.status === "not_found") return notFound;
 
