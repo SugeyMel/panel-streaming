@@ -257,7 +257,7 @@ export function SellerCodeLookup({
           {result.status === "FOUND" && result.history && result.history.length > 0 ? (
             <div className="mt-4 border-t border-emerald-500/20 pt-3">
               <p className="text-xs font-semibold text-emerald-200/80">
-                {disney ? "Códigos de los últimos 15 minutos" : "Códigos de los últimos 30 minutos"}
+                Códigos de los últimos 30 minutos
               </p>
               <ul className="mt-2 space-y-1.5">
                 {result.history.map((item, index) => (

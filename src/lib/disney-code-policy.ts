@@ -10,8 +10,8 @@ export const DISNEY_PAUSED_MESSAGE =
 export const DISNEY_EXPIRED_MESSAGE = "La solicitud se canceló porque no se aprobó en 15 minutos.";
 export const DISNEY_REJECTED_MESSAGE = "El administrador rechazó esta solicitud.";
 
-/** El código de Disney+ caduca a los 15 minutos: solo se entrega si llegó en esa ventana. */
-export const DISNEY_CODE_MAX_AGE_MINUTES = 15;
+/** Misma ventana que el resto de plataformas: solo se entrega si llegó en los últimos 30 minutos. */
+export const DISNEY_CODE_MAX_AGE_MINUTES = 30;
 /** Máximo de códigos entregados por cuenta (correo) en una hora. */
 export const DISNEY_CODE_HOURLY_MAX = 3;
 export const DISNEY_APPROVAL_WINDOW_MS = 15 * 60 * 1000;

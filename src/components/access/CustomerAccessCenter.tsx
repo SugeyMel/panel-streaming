@@ -427,7 +427,7 @@ function AccessCard({
           {result.status === "FOUND" && result.history && result.history.length > 1 ? (
             <div className="mt-2 border-t border-white/10 pt-2">
               <p className="text-[11px] font-medium text-[#94A3B8]">
-                {disney ? "Códigos de los últimos 15 minutos" : "Códigos de los últimos 30 minutos"}
+                Códigos de los últimos 30 minutos
               </p>
               <ul className="mt-1 space-y-1">
                 {result.history.map((item, index) => (
