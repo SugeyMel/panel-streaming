@@ -433,6 +433,23 @@ export function classifyEmailMessage(
           reason: "Bloqueado: el código de inicio de sesión está apagado.",
         };
   }
+  // Netflix 4 dígitos va antes de las palabras bloqueadas: el interruptor "Permitido"
+  // manda, aunque el asunto esté en la lista (ej. "Your Netflix sign-in code").
+  if (isNetflixLoginCode(message)) {
+    return policy.allowLoginCode
+      ? {
+          decision: "allow",
+          type: "LOGIN_CODE",
+          category: "login",
+          reason: "Permitido: código de inicio de sesión de Netflix.",
+        }
+      : {
+          decision: "block",
+          type: "UNKNOWN_BLOCKED",
+          category: "login",
+          reason: "Bloqueado: el código de inicio de sesión está apagado.",
+        };
+  }
   if (includesAny(text, EMAIL_CHANGE)) {
     return {
       decision: "block",
@@ -629,6 +646,30 @@ export function extractAccessCode(text: string) {
   // Códigos escritos con espacios entre dígitos, ej. "8 0 4 2 7 6" (Netflix).
   const spaced = /(?<!\d)(\d(?:[  ]\d){3,7})(?!\d)/.exec(text);
   return spaced ? spaced[1].replace(/[  ]/g, "") : undefined;
+}
+
+/**
+ * Correo de inicio de Netflix (4 dígitos). El asunto en inglés suele ser
+ * "Your Netflix sign-in code" y el cuerpo "Enter this code to sign in"
+ * (Gmail lo muestra traducido como "Escribe este código para iniciar sesión").
+ * Se mira el asunto: un restablecimiento de clave no entra aquí.
+ */
+export function isNetflixLoginCode(message: ClassifiableMessage) {
+  const host = domainOf(message.from);
+  if (!hostMatches(host, ["netflix.com"])) return false;
+  const subject = subjectText(message.subject);
+  if (includesAny(subject, PASSWORD) || includesAny(subject, EMAIL_CHANGE)) return false;
+  const text = fold(`${decodeMimeHeader(message.subject)} ${message.snippet ?? ""}`);
+  return includesAny(text, [
+    "sign-in code",
+    "signin code",
+    "sign in code",
+    "codigo de inicio",
+    "enter this code to sign in",
+    "escribe este codigo para iniciar sesion",
+    "ingresa este codigo para iniciar sesion",
+    "introduce este codigo para iniciar sesion",
+  ]);
 }
 
 /** Disney+ manda el código de 6 dígitos en el cuerpo. Se prefiere ese, no un año u otro número. */

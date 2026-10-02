@@ -78,6 +78,9 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
     url.searchParams.append("metadataHeaders", "From");
     url.searchParams.append("metadataHeaders", "Subject");
     url.searchParams.append("metadataHeaders", "To");
+    url.searchParams.append("metadataHeaders", "Cc");
+    url.searchParams.append("metadataHeaders", "Delivered-To");
+    url.searchParams.append("metadataHeaders", "X-Original-To");
   }
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -95,7 +98,21 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
   const safeRecipient = recipient?.replace(/[^a-z0-9@._+-]/gi, "");
   // Solo mensajes recientes: un código de hace una hora ya no sirve y no debe mostrarse.
   const afterEpoch = Math.floor((Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000) / 1000);
-  listUrl.searchParams.set("q", safeRecipient ? `after:${afterEpoch} to:${safeRecipient}` : `after:${afterEpoch}`);
+  const at = safeRecipient?.lastIndexOf("@") ?? -1;
+  const domain = safeRecipient && at > 0 ? safeRecipient.slice(at + 1).toLowerCase() : "";
+  const forwardedDomain =
+    domain.length > 0 &&
+    !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
+      domain,
+    );
+  // En un reenvío de dominio propio (kitiga.com → Gmail) el operador to: no indexa la dirección original.
+  // La frase entre comillas sí la encuentra en cabeceras y en el cuerpo.
+  const query = !safeRecipient
+    ? `after:${afterEpoch}`
+    : forwardedDomain
+      ? `after:${afterEpoch} "${safeRecipient}"`
+      : `after:${afterEpoch} to:${safeRecipient}`;
+  listUrl.searchParams.set("q", query);
   const listRes = await fetch(listUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
@@ -104,14 +121,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
   const list = (await listRes.json()) as GmailList;
   if (!listRes.ok) return [];
   let messages = list.messages ?? [];
-  const at = safeRecipient?.lastIndexOf("@") ?? -1;
-  const domain = safeRecipient && at > 0 ? safeRecipient.slice(at + 1).toLowerCase() : "";
-  const forwardedDomain =
-    domain.length > 0 &&
-    !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
-      domain,
-    );
-  // Gmail no indexa el To: original de un reenvío de dominio propio: se listan los recientes y se filtra aquí.
+  // Si ni la frase aparece indexada, se listan los recientes y se filtra por cabeceras o por el texto.
   let filterToLocally = false;
   if (messages.length === 0 && forwardedDomain && safeRecipient) {
     const fallbackUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
@@ -138,7 +148,8 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
     const id = messages[index]?.id;
     if (!message || !id) continue;
     const to = header(message.payload?.headers, "To");
-    if (filterToLocally && !to.toLowerCase().includes(wanted)) continue;
+    const mentioned = `${to} ${header(message.payload?.headers, "Cc")} ${header(message.payload?.headers, "Delivered-To")} ${header(message.payload?.headers, "X-Original-To")} ${message.snippet ?? ""}`;
+    if (filterToLocally && !mentioned.toLowerCase().includes(wanted)) continue;
     out.push({
       from: header(message.payload?.headers, "From"),
       subject: header(message.payload?.headers, "Subject"),
