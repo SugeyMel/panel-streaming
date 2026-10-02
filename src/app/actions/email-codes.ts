@@ -58,7 +58,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ConnectedEmailAccount, EmailCodeFilterPolicy, EmailLookupResult, EmailLookupType } from "@/lib/types";
 
-const RATE_LIMIT = { max: 5, windowMinutes: 10 };
+const RATE_LIMIT = { max: 20, windowMinutes: 10 };
 
 function pausedAccountResult(): EmailLookupResult {
   return { type: "UNKNOWN_BLOCKED", status: "PAUSED", message: DISNEY_PAUSED_MESSAGE };
