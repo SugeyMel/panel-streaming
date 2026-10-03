@@ -276,6 +276,7 @@ export async function loadStreamingAccounts(sellerId: string | null): Promise<St
 
 export type AdminAssignedAccount = {
   id: string;
+  serviceId: string | null;
   sellerId: string;
   platformId: string;
   email: string;
@@ -311,37 +312,89 @@ export async function loadAdminAssignedAccounts(sellerId?: string): Promise<Admi
   if (error) ({ data, error } = await run(baseColumns));
   if (error) return [];
   const rows = (data ?? []) as unknown as Record<string, unknown>[];
-  const customerIds = [...new Set(rows.map((row) => row.customer_id).filter(Boolean).map(String))];
+  const accountIds = rows.map((row) => String(row.id));
+  type AssignedService = {
+    id: string;
+    account_id: string;
+    customer_id: string | null;
+    access_profile: string | null;
+    access_password: string | null;
+    end_date: string | null;
+    status: string | null;
+  };
+  const servicesByAccount = new Map<string, AssignedService[]>();
+  if (accountIds.length > 0) {
+    const { data: serviceRows } = await admin
+      .from("services")
+      .select("id, account_id, customer_id, access_profile, access_password, end_date, status")
+      .in("account_id", accountIds)
+      .like("notes", "Cuenta asignada por la administradora%");
+    for (const item of serviceRows ?? []) {
+      const key = String(item.account_id);
+      const list = servicesByAccount.get(key) ?? [];
+      list.push(item as AssignedService);
+      servicesByAccount.set(key, list);
+    }
+  }
+  const customerIds = [
+    ...new Set(
+      [
+        ...rows.map((row) => row.customer_id),
+        ...[...servicesByAccount.values()].flat().map((item) => item.customer_id),
+      ]
+        .filter(Boolean)
+        .map(String),
+    ),
+  ];
   const customerNames = new Map<string, string>();
   if (customerIds.length > 0) {
     const { data: customerRows } = await admin.from("customers").select("id, name").in("id", customerIds);
     for (const item of customerRows ?? []) customerNames.set(String(item.id), String(item.name ?? ""));
   }
-  // PIN de las cuentas dadas a clientes directos (se guarda en su servicio).
-  const pins = new Map<string, string>();
-  const directIds = rows.filter((row) => row.customer_id).map((row) => String(row.id));
-  if (directIds.length > 0) {
-    const { data: serviceRows } = await admin
-      .from("services")
-      .select("account_id, access_password")
-      .in("account_id", directIds)
-      .like("notes", "Cuenta asignada por la administradora%");
-    for (const item of serviceRows ?? []) pins.set(String(item.account_id), String(item.access_password ?? ""));
+  const result: AdminAssignedAccount[] = [];
+  for (const row of rows) {
+    const accountId = String(row.id);
+    const base = {
+      id: accountId,
+      sellerId: String(row.seller_id),
+      platformId: String(row.platform_id),
+      email: String(row.email ?? ""),
+      password: String(row.password ?? ""),
+      assignedAt: row.assigned_at ? String(row.assigned_at).slice(0, 10) : null,
+    };
+    const services = servicesByAccount.get(accountId) ?? [];
+    if (services.length === 0) {
+      result.push({
+        ...base,
+        serviceId: null,
+        label: String(row.label ?? ""),
+        expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
+        customerId: row.customer_id ? String(row.customer_id) : null,
+        customerName: row.customer_id ? customerNames.get(String(row.customer_id)) ?? null : null,
+        pin: "",
+        active: String(row.status ?? "") !== "inactive",
+      });
+      continue;
+    }
+    for (const service of services) {
+      const customerId = service.customer_id ? String(service.customer_id) : null;
+      result.push({
+        ...base,
+        serviceId: String(service.id),
+        label: String(service.access_profile ?? "") || String(row.label ?? ""),
+        expiresAt: service.end_date
+          ? String(service.end_date).slice(0, 10)
+          : row.expires_at
+            ? String(row.expires_at).slice(0, 10)
+            : null,
+        customerId,
+        customerName: customerId ? customerNames.get(customerId) ?? null : null,
+        pin: String(service.access_password ?? ""),
+        active: String(row.status ?? "") !== "inactive" && String(service.status ?? "") !== "suspended",
+      });
+    }
   }
-  return rows.map((row) => ({
-    id: String(row.id),
-    sellerId: String(row.seller_id),
-    platformId: String(row.platform_id),
-    email: String(row.email ?? ""),
-    label: String(row.label ?? ""),
-    expiresAt: row.expires_at ? String(row.expires_at).slice(0, 10) : null,
-    assignedAt: row.assigned_at ? String(row.assigned_at).slice(0, 10) : null,
-    customerId: row.customer_id ? String(row.customer_id) : null,
-    customerName: row.customer_id ? customerNames.get(String(row.customer_id)) ?? null : null,
-    password: String(row.password ?? ""),
-    pin: pins.get(String(row.id)) ?? "",
-    active: String(row.status ?? "") !== "inactive",
-  }));
+  return result;
 }
 
 function emailTablesClient() {

@@ -1681,38 +1681,77 @@ export async function assignAccountToSellerAction(formData: FormData) {
   if (customerId && String(formData.get("pinMode") ?? "none") === "pin" && !pin) {
     return { ok: false, error: "Escribe el PIN del perfil o elige \"No tiene PIN\"." };
   }
-  const { data: insertedAccounts, error } = await admin.from("streaming_accounts").insert(
-    pairs.map((pair) => ({
-      seller_id: sellerId,
-      platform_id: platformId,
-      email: pair.email,
-      password: pair.password,
-      label,
-      max_profiles: maxProfiles,
-      sale_kind: saleKind,
-      status: "available",
-      expires_at: expiresAt,
-      assigned_by_admin: true,
-      assigned_at: now,
-      ...(customerId ? { customer_id: customerId } : {}),
-    })),
-  ).select("id");
-  if (error) {
-    if (customerId && error.message.includes("customer_id")) {
-      return { ok: false, error: "Falta ejecutar la migración 0037 en Supabase para guardar el cliente." };
+  // Por perfil la misma cuenta (mismo correo) se entrega a varios clientes.
+  // La base no permite dos filas con ese correo, así que el perfil nuevo
+  // se cuelga de la cuenta que ya existe.
+  const fresh: { email: string; password: string }[] = [];
+  let attached = 0;
+  for (const pair of pairs) {
+    const existing = await findAdminAccountByEmail(admin, sellerId, platformId, pair.email);
+    if (!existing) {
+      fresh.push(pair);
+      continue;
     }
-    return { ok: false, error: error.message };
+    if (saleKind !== "profiles" || !customerId) {
+      return {
+        ok: false,
+        error: saleKind === "full"
+          ? "Esa cuenta completa ya está asignada en esa plataforma."
+          : "Esa cuenta ya está asignada. Elige Venta directa y el cliente para entregar otro perfil.",
+      };
+    }
+    if (String(existing.sale_kind) === "full") {
+      return { ok: false, error: "Esa cuenta está como completa y no se puede repartir por perfiles." };
+    }
+    const extra = await deliverExtraProfile(admin, String(existing.id), customerId, label, pin, pair.password, expiresAt);
+    if (!extra.ok) return extra;
+    attached += 1;
   }
-  if (customerId) {
+
+  let insertedAccounts: { id: string }[] = [];
+  if (fresh.length > 0) {
+    const { data, error } = await admin.from("streaming_accounts").insert(
+      fresh.map((pair) => ({
+        seller_id: sellerId,
+        platform_id: platformId,
+        email: pair.email,
+        password: pair.password,
+        label,
+        max_profiles: maxProfiles,
+        sale_kind: saleKind,
+        status: "available",
+        expires_at: expiresAt,
+        assigned_by_admin: true,
+        assigned_at: now,
+        ...(customerId ? { customer_id: customerId } : {}),
+      })),
+    ).select("id");
+    if (error) {
+      if (customerId && error.message.includes("customer_id")) {
+        return { ok: false, error: "Falta ejecutar la migración 0037 en Supabase para guardar el cliente." };
+      }
+      if (error.code === "23505" || error.message.includes("streaming_accounts_unique_email")) {
+        return {
+          ok: false,
+          error: saleKind === "profiles"
+            ? "Esa cuenta ya está asignada. Elige el cliente para entregar otro perfil."
+            : "Esa cuenta completa ya está asignada en esa plataforma.",
+        };
+      }
+      return { ok: false, error: error.message };
+    }
+    insertedAccounts = data ?? [];
+  }
+  if (customerId && insertedAccounts.length > 0) {
     // Para que el cliente vea la cuenta en su panel, se crea su servicio.
-    const pins = new Map((insertedAccounts ?? []).map((item) => [String(item.id), pin]));
+    const pins = new Map(insertedAccounts.map((item) => [String(item.id), pin]));
     const synced = await syncDirectCustomerServices(admin, pins);
     if (!synced.ok) return { ok: false, error: `Cuenta asignada, pero no se pudo mostrar al cliente: ${synced.error}` };
-    revalidatePath("/cliente", "layout");
   }
+  if (customerId) revalidatePath("/cliente", "layout");
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
-  return { ok: true, count: pairs.length };
+  return { ok: true, count: pairs.length, attached };
 }
 
 type ServiceAdminClient = NonNullable<ReturnType<typeof createServiceClient>>;
@@ -1722,6 +1761,178 @@ type ServiceAdminClient = NonNullable<ReturnType<typeof createServiceClient>>;
  * (así aparecen en su panel). Solo crea los que faltan, se puede llamar varias veces.
  */
 const DIRECT_SERVICE_NOTE = "Cuenta asignada por la administradora";
+
+async function findAdminAccountByEmail(
+  admin: ServiceAdminClient,
+  sellerId: string,
+  platformId: string,
+  email: string,
+) {
+  const wanted = email.trim().toLowerCase();
+  const pattern = wanted.replace(/[%_\\]/g, "\\$&");
+  const { data, error } = await admin
+    .from("streaming_accounts")
+    .select("id, customer_id, email, sale_kind")
+    .eq("seller_id", sellerId)
+    .eq("platform_id", platformId)
+    .eq("assigned_by_admin", true)
+    .ilike("email", pattern);
+  if (error || !data) return null;
+  return data.find((row) => String(row.email ?? "").trim().toLowerCase() === wanted) ?? null;
+}
+
+async function directAssignedProductId(
+  admin: ServiceAdminClient,
+  sellerId: string,
+  platformId: string,
+  cache: Map<string, string>,
+): Promise<string | null> {
+  const key = `${sellerId}:${platformId}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const { data: found } = await admin
+    .from("products")
+    .select("id")
+    .eq("seller_id", sellerId)
+    .eq("platform_id", platformId)
+    .eq("name", "Cuenta asignada")
+    .limit(1)
+    .maybeSingle();
+  let productId = found?.id ? String(found.id) : null;
+  if (!productId) {
+    const { data: created } = await admin
+      .from("products")
+      .insert({
+        seller_id: sellerId,
+        platform_id: platformId,
+        name: "Cuenta asignada",
+        description: "Uso interno: cuentas asignadas por la administradora.",
+        cost_price: 0,
+        sale_price: 0,
+        status: "inactive",
+      })
+      .select("id")
+      .maybeSingle();
+    productId = created?.id ? String(created.id) : null;
+  }
+  if (productId) cache.set(key, productId);
+  return productId;
+}
+
+async function createDirectAssignedService(
+  admin: ServiceAdminClient,
+  account: {
+    id: string;
+    seller_id: string;
+    platform_id: string;
+    customer_id: string;
+    email: string;
+    password: string;
+    label: string;
+    expires_at: string | null;
+    assigned_at: string | null;
+  },
+  pin: string,
+  cache: Map<string, string>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const productId = await directAssignedProductId(admin, account.seller_id, account.platform_id, cache);
+  if (!productId) return { ok: false, error: "no se pudo preparar el producto interno." };
+  const today = new Date().toISOString().slice(0, 10);
+  const startDate = account.assigned_at ? String(account.assigned_at).slice(0, 10) : today;
+  const endDate = account.expires_at
+    ? String(account.expires_at).slice(0, 10)
+    : new Date(Date.parse(startDate) + 30 * 86400000).toISOString().slice(0, 10);
+  const { error } = await admin.from("services").insert({
+    seller_id: account.seller_id,
+    customer_id: account.customer_id,
+    product_id: productId,
+    platform_id: account.platform_id,
+    start_date: startDate,
+    end_date: endDate,
+    cost_price: 0,
+    sale_price: 0,
+    status: "active",
+    notes: account.password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${account.password}` : DIRECT_SERVICE_NOTE,
+    platform_email: account.email || null,
+    account_id: account.id,
+    access_password: pin || null,
+    access_profile: account.label || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Otro cliente recibe un perfil de una cuenta que ya estaba asignada. */
+async function deliverExtraProfile(
+  admin: ServiceAdminClient,
+  accountId: string,
+  customerId: string,
+  label: string,
+  pin: string,
+  password: string,
+  expiresAt: string | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const synced = await syncDirectCustomerServices(admin);
+  if (!synced.ok) return synced;
+
+  const { data: services, error } = await admin
+    .from("services")
+    .select("id, customer_id, access_profile")
+    .eq("account_id", accountId)
+    .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+  if (error) return { ok: false, error: error.message };
+
+  const profile = label.trim().toLowerCase();
+  const taken = (services ?? []).some(
+    (item) =>
+      String(item.customer_id) === customerId &&
+      String(item.access_profile ?? "").trim().toLowerCase() === profile,
+  );
+  if (taken) return { ok: false, error: "Ese perfil ya está asignado a este cliente." };
+
+  const { data: account, error: accountError } = await admin
+    .from("streaming_accounts")
+    .select("id, seller_id, platform_id, email, password, expires_at, assigned_at, max_profiles")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (accountError || !account) return { ok: false, error: "No se encontró la cuenta." };
+
+  if (password && password !== String(account.password ?? "")) {
+    const { error: passwordError } = await admin
+      .from("streaming_accounts")
+      .update({ password, updated_at: new Date().toISOString() })
+      .eq("id", accountId);
+    if (passwordError) return { ok: false, error: passwordError.message };
+    await admin
+      .from("services")
+      .update({ notes: `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${password}` })
+      .eq("account_id", accountId)
+      .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+  }
+
+  const used = (services?.length ?? 0) + 1;
+  const maxProfiles = Number(account.max_profiles ?? 5);
+  if (used > maxProfiles && used <= 8) {
+    await admin.from("streaming_accounts").update({ max_profiles: used }).eq("id", accountId);
+  }
+
+  return createDirectAssignedService(
+    admin,
+    {
+      id: accountId,
+      seller_id: String(account.seller_id),
+      platform_id: String(account.platform_id),
+      customer_id: customerId,
+      email: String(account.email ?? ""),
+      password: password || String(account.password ?? ""),
+      label,
+      expires_at: expiresAt ?? (account.expires_at ? String(account.expires_at) : null),
+      assigned_at: new Date().toISOString(),
+    },
+    pin,
+    new Map(),
+  );
+}
 
 async function syncDirectCustomerServices(
   admin: ServiceAdminClient,
@@ -1744,70 +1955,26 @@ async function syncDirectCustomerServices(
   const missing = list.filter((item) => !linkedIds.has(String(item.id)));
   if (missing.length === 0) return { ok: true, created: 0 };
 
-  // Producto interno (oculto) por plataforma: la base de datos exige un producto en cada servicio.
-  const productIds = new Map<string, string>();
-  async function productFor(sellerId: string, platformId: string): Promise<string | null> {
-    const key = `${sellerId}:${platformId}`;
-    const cached = productIds.get(key);
-    if (cached) return cached;
-    const { data: found } = await admin
-      .from("products")
-      .select("id")
-      .eq("seller_id", sellerId)
-      .eq("platform_id", platformId)
-      .eq("name", "Cuenta asignada")
-      .limit(1)
-      .maybeSingle();
-    let productId = found?.id ? String(found.id) : null;
-    if (!productId) {
-      const { data: created } = await admin
-        .from("products")
-        .insert({
-          seller_id: sellerId,
-          platform_id: platformId,
-          name: "Cuenta asignada",
-          description: "Uso interno: cuentas asignadas por la administradora.",
-          cost_price: 0,
-          sale_price: 0,
-          status: "inactive",
-        })
-        .select("id")
-        .maybeSingle();
-      productId = created?.id ? String(created.id) : null;
-    }
-    if (productId) productIds.set(key, productId);
-    return productId;
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
+  const cache = new Map<string, string>();
   let created = 0;
   for (const account of missing) {
-    const sellerId = String(account.seller_id);
-    const platformId = String(account.platform_id);
-    const productId = await productFor(sellerId, platformId);
-    if (!productId) return { ok: false, error: "no se pudo preparar el producto interno." };
-    const startDate = account.assigned_at ? String(account.assigned_at).slice(0, 10) : today;
-    const endDate = account.expires_at
-      ? String(account.expires_at).slice(0, 10)
-      : new Date(Date.parse(startDate) + 30 * 86400000).toISOString().slice(0, 10);
-    const { error: insertError } = await admin.from("services").insert({
-      seller_id: sellerId,
-      customer_id: String(account.customer_id),
-      product_id: productId,
-      platform_id: platformId,
-      start_date: startDate,
-      end_date: endDate,
-      cost_price: 0,
-      sale_price: 0,
-      status: "active",
-      // La clave de la cuenta va en notas ("Clave de la cuenta: ...") y el PIN en access_password.
-      notes: account.password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${String(account.password)}` : DIRECT_SERVICE_NOTE,
-      platform_email: String(account.email ?? "") || null,
-      account_id: String(account.id),
-      access_password: pins.get(String(account.id)) || null,
-      access_profile: String(account.label ?? "") || null,
-    });
-    if (insertError) return { ok: false, error: insertError.message };
+    const createdService = await createDirectAssignedService(
+      admin,
+      {
+        id: String(account.id),
+        seller_id: String(account.seller_id),
+        platform_id: String(account.platform_id),
+        customer_id: String(account.customer_id),
+        email: String(account.email ?? ""),
+        password: String(account.password ?? ""),
+        label: String(account.label ?? ""),
+        expires_at: account.expires_at ? String(account.expires_at) : null,
+        assigned_at: account.assigned_at ? String(account.assigned_at) : null,
+      },
+      pins.get(String(account.id)) || "",
+      cache,
+    );
+    if (!createdService.ok) return createdService;
     created += 1;
   }
   return { ok: true, created };
@@ -1853,6 +2020,7 @@ export async function updateAssignedAccountAction(formData: FormData) {
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
   const id = String(formData.get("id") ?? "").trim();
+  const serviceId = String(formData.get("serviceId") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "").trim();
   const label = String(formData.get("label") ?? "").trim();
@@ -1862,9 +2030,15 @@ export async function updateAssignedAccountAction(formData: FormData) {
   if (!id || !email) return { ok: false, error: "Escribe el correo de la cuenta." };
   if (pinMode === "pin" && !pin) return { ok: false, error: "Escribe el PIN o elige \"No tiene PIN\"." };
 
+  const sharedNotes = password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${password}` : DIRECT_SERVICE_NOTE;
+  const accountPatch: Record<string, unknown> = { email, password, updated_at: new Date().toISOString() };
+  if (!serviceId) {
+    accountPatch.label = label;
+    accountPatch.expires_at = expiresAt;
+  }
   const { error } = await admin
     .from("streaming_accounts")
-    .update({ email, password, label, expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .update(accountPatch)
     .eq("id", id)
     .eq("assigned_by_admin", true);
   if (error) {
@@ -1872,20 +2046,43 @@ export async function updateAssignedAccountAction(formData: FormData) {
     return { ok: false, error: error.message };
   }
 
-  // Si la cuenta es de un cliente directo, se actualiza también lo que ve en su panel.
-  const servicePatch: Record<string, unknown> = {
-    platform_email: email,
-    notes: password ? `${DIRECT_SERVICE_NOTE}\nClave de la cuenta: ${password}` : DIRECT_SERVICE_NOTE,
-    access_profile: label || null,
-  };
-  if (formData.has("pinMode")) servicePatch.access_password = pin || null;
-  if (expiresAt) servicePatch.end_date = expiresAt;
-  const { error: serviceError } = await admin
-    .from("services")
-    .update(servicePatch)
-    .eq("account_id", id)
-    .like("notes", `${DIRECT_SERVICE_NOTE}%`);
-  if (serviceError) return { ok: false, error: `Cuenta guardada, pero no se actualizó el panel del cliente: ${serviceError.message}` };
+  if (serviceId) {
+    const servicePatch: Record<string, unknown> = {
+      platform_email: email,
+      notes: sharedNotes,
+      access_profile: label || null,
+    };
+    if (formData.has("pinMode")) servicePatch.access_password = pin || null;
+    if (expiresAt) servicePatch.end_date = expiresAt;
+    const { error: serviceError } = await admin
+      .from("services")
+      .update(servicePatch)
+      .eq("id", serviceId)
+      .eq("account_id", id);
+    if (serviceError) return { ok: false, error: `Cuenta guardada, pero no se actualizó el panel del cliente: ${serviceError.message}` };
+    // Correo y clave son de la cuenta: los demás perfiles los reciben, su perfil y PIN no.
+    const { error: siblingsError } = await admin
+      .from("services")
+      .update({ platform_email: email, notes: sharedNotes })
+      .eq("account_id", id)
+      .neq("id", serviceId)
+      .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+    if (siblingsError) return { ok: false, error: `Cuenta guardada, pero no se actualizó el panel del cliente: ${siblingsError.message}` };
+  } else {
+    const servicePatch: Record<string, unknown> = {
+      platform_email: email,
+      notes: sharedNotes,
+      access_profile: label || null,
+    };
+    if (formData.has("pinMode")) servicePatch.access_password = pin || null;
+    if (expiresAt) servicePatch.end_date = expiresAt;
+    const { error: serviceError } = await admin
+      .from("services")
+      .update(servicePatch)
+      .eq("account_id", id)
+      .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+    if (serviceError) return { ok: false, error: `Cuenta guardada, pero no se actualizó el panel del cliente: ${serviceError.message}` };
+  }
 
   revalidatePath("/admin/cuentas");
   revalidatePath("/panel/cuentas");
@@ -1894,13 +2091,32 @@ export async function updateAssignedAccountAction(formData: FormData) {
 }
 
 /** Administrador: desactiva (sin borrar) o reactiva una cuenta asignada. */
-export async function setAssignedAccountActiveAction(id: string, active: boolean) {
+export async function setAssignedAccountActiveAction(id: string, active: boolean, serviceId?: string) {
   const blocked = ensureLive();
   if (blocked) return blocked;
   const session = await getAppSession();
   requireRole(session, ["support"]);
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
+  if (serviceId) {
+    const { error } = await admin
+      .from("services")
+      .update({ status: active ? "active" : "suspended" })
+      .eq("id", serviceId)
+      .eq("account_id", id);
+    if (error) return { ok: false, error: error.message };
+    if (active) {
+      await admin
+        .from("streaming_accounts")
+        .update({ status: "available", updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("assigned_by_admin", true);
+    }
+    revalidatePath("/admin/cuentas");
+    revalidatePath("/panel/cuentas");
+    revalidatePath("/cliente", "layout");
+    return { ok: true };
+  }
   const { error } = await admin
     .from("streaming_accounts")
     .update({ status: active ? "available" : "inactive", updated_at: new Date().toISOString() })
@@ -1920,15 +2136,40 @@ export async function setAssignedAccountActiveAction(id: string, active: boolean
 }
 
 /** Administrador: quita una cuenta que había asignado. */
-export async function removeAssignedAccountAction(id: string) {
+export async function removeAssignedAccountAction(id: string, serviceId?: string) {
   const blocked = ensureLive();
   if (blocked) return blocked;
   const session = await getAppSession();
   requireRole(session, ["support"]);
   const admin = createServiceClient();
   if (!admin) return { ok: false, error: "Servicio no disponible." };
+  if (serviceId) {
+    const { data: services, error: listError } = await admin
+      .from("services")
+      .select("id, customer_id")
+      .eq("account_id", id)
+      .like("notes", `${DIRECT_SERVICE_NOTE}%`);
+    if (listError) return { ok: false, error: listError.message };
+    const others = (services ?? []).filter((item) => String(item.id) !== serviceId);
+    const { error: deleteError } = await admin.from("services").delete().eq("id", serviceId).eq("account_id", id);
+    if (deleteError) return { ok: false, error: deleteError.message };
+    if (others.length === 0) {
+      const { error } = await admin.from("streaming_accounts").delete().eq("id", id).eq("assigned_by_admin", true);
+      if (error) return { ok: false, error: error.message };
+    } else {
+      const removed = (services ?? []).find((item) => String(item.id) === serviceId);
+      const { data: account } = await admin.from("streaming_accounts").select("customer_id").eq("id", id).maybeSingle();
+      if (account && removed && String(account.customer_id ?? "") === String(removed.customer_id ?? "")) {
+        await admin.from("streaming_accounts").update({ customer_id: others[0].customer_id }).eq("id", id);
+      }
+    }
+    revalidatePath("/admin/cuentas");
+    revalidatePath("/panel/cuentas");
+    revalidatePath("/cliente", "layout");
+    return { ok: true };
+  }
   // Si era de un cliente directo, también se quita de su panel.
-  await admin.from("services").delete().eq("account_id", id).like("notes", "Cuenta asignada por la administradora%");
+  await admin.from("services").delete().eq("account_id", id).like("notes", `${DIRECT_SERVICE_NOTE}%`);
   const { error } = await admin
     .from("streaming_accounts")
     .delete()

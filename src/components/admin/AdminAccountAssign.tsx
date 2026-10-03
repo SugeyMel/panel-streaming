@@ -93,7 +93,17 @@ export function AdminAccountAssign({
         setSellerId("");
         setPinMode("none");
         const count = "count" in result && typeof result.count === "number" ? result.count : 1;
-        setMessage({ ok: true, text: count > 1 ? `${count} cuentas asignadas al vendedor.` : "Cuenta asignada al vendedor." });
+        const attached = "attached" in result && typeof result.attached === "number" ? result.attached : 0;
+        const text = attached > 0 && attached === count
+          ? attached > 1
+            ? `${attached} perfiles entregados en la misma cuenta.`
+            : "Perfil entregado. La cuenta queda en otro cliente."
+          : attached > 0
+            ? "Listo. Los correos repetidos se entregaron como otro perfil."
+            : count > 1
+              ? `${count} cuentas asignadas al vendedor.`
+              : "Cuenta asignada al vendedor.";
+        setMessage({ ok: true, text });
         router.refresh();
       } else {
         setMessage({ ok: false, text: result.error ?? "No se pudo asignar." });
@@ -105,15 +115,18 @@ export function AdminAccountAssign({
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("¿Eliminar esta cuenta? Se borra para siempre. Si solo quieres pausarla, usa Desactivar.")) return;
-    const result = await removeAssignedAccountAction(id);
+  async function remove(id: string, serviceId: string | null) {
+    const question = serviceId
+      ? "¿Quitar este perfil? Si era el único de la cuenta, la cuenta también se elimina."
+      : "¿Eliminar esta cuenta? Se borra para siempre. Si solo quieres pausarla, usa Desactivar.";
+    if (!window.confirm(question)) return;
+    const result = await removeAssignedAccountAction(id, serviceId ?? undefined);
     if (result.ok) router.refresh();
     else setMessage({ ok: false, text: result.error ?? "No se pudo eliminar." });
   }
 
-  async function toggleActive(id: string, active: boolean) {
-    const result = await setAssignedAccountActiveAction(id, active);
+  async function toggleActive(id: string, active: boolean, serviceId: string | null) {
+    const result = await setAssignedAccountActiveAction(id, active, serviceId ?? undefined);
     if (result.ok) router.refresh();
     else setMessage({ ok: false, text: result.error ?? "No se pudo cambiar el estado." });
   }
@@ -195,7 +208,12 @@ export function AdminAccountAssign({
             <option value="profiles">Perfiles</option>
           </select>
           {saleKind === "profiles" ? (
-            <input name="label" placeholder="Nombre del perfil (opcional)" className={inputClass} />
+            <div>
+              <input name="label" placeholder="Nombre del perfil (opcional)" className={inputClass} />
+              <p className="mt-1 text-xs text-[#94A3B8]">
+                El mismo correo puede ir a varios clientes: elige al cliente y escribe el nombre de su perfil.
+              </p>
+            </div>
           ) : null}
           {isDirect ? (
             <>
@@ -248,8 +266,10 @@ export function AdminAccountAssign({
           <p className="px-5 py-8 text-center text-sm text-[#94A3B8]">Aún no has asignado cuentas.</p>
         ) : (
           <ul className="divide-y divide-[#253047]">
-            {shown.map((item) => (
-              <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
+            {shown.map((item) => {
+              const rowKey = item.serviceId ? `${item.id}:${item.serviceId}` : item.id;
+              return (
+              <li key={rowKey} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
                 <div className="min-w-0 space-y-1">
                   <div className="flex items-center gap-2">
                     <PlatformName platform={platforms.find((p) => p.id === item.platformId) ?? item.platformId} size="table" />
@@ -262,20 +282,21 @@ export function AdminAccountAssign({
                     {item.sellerId === directSellerId && item.customerName
                       ? `Venta directa · Cliente: ${item.customerName}`
                       : `Vendedor: ${sellers.find((s) => s.id === item.sellerId)?.name ?? "—"}`}
+                    {item.label ? ` · Perfil: ${item.label}` : ""}
                     {item.expiresAt ? ` · Vence ${formatDdMmYyyy(item.expiresAt)}` : ""}
                   </p>
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setEditingId(editingId === item.id ? null : item.id)}
+                    onClick={() => setEditingId(editingId === rowKey ? null : rowKey)}
                     className="h-9 rounded-lg border border-[#253047] bg-[#1B2436] px-3 text-xs font-semibold text-white hover:border-violet-400/50"
                   >
-                    {editingId === item.id ? "Cerrar" : "Editar"}
+                    {editingId === rowKey ? "Cerrar" : "Editar"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => toggleActive(item.id, !item.active)}
+                    onClick={() => toggleActive(item.id, !item.active, item.serviceId)}
                     className={`h-9 rounded-lg border px-3 text-xs font-semibold ${
                       item.active
                         ? "border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-400/70"
@@ -286,13 +307,13 @@ export function AdminAccountAssign({
                   </button>
                   <button
                     type="button"
-                    onClick={() => remove(item.id)}
+                    onClick={() => remove(item.id, item.serviceId)}
                     className="h-9 rounded-lg border border-red-400/40 bg-red-500/10 px-3 text-xs font-semibold text-red-200 hover:border-red-400/70"
                   >
                     Eliminar
                   </button>
                 </div>
-                {editingId === item.id ? (
+                {editingId === rowKey ? (
                   <EditAssignedForm
                     item={item}
                     onDone={() => {
@@ -302,7 +323,8 @@ export function AdminAccountAssign({
                   />
                 ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Card>
@@ -335,6 +357,7 @@ function EditAssignedForm({ item, onDone }: { item: AdminAssignedAccount; onDone
   return (
     <form onSubmit={save} className="grid w-full gap-2 rounded-xl border border-[#253047] bg-[#0B111C] p-3 sm:grid-cols-2">
       <input type="hidden" name="id" value={item.id} />
+      {item.serviceId ? <input type="hidden" name="serviceId" value={item.serviceId} /> : null}
       <input name="email" required defaultValue={item.email} placeholder="Correo de la cuenta" className={inputClass} />
       <input name="password" defaultValue={item.password} placeholder="Clave de la cuenta" className={inputClass} />
       <input name="label" defaultValue={item.label} placeholder="Nombre del perfil (opcional)" className={inputClass} />
