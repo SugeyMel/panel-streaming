@@ -255,17 +255,20 @@ function AccessCard({
   const theme = platformCardTheme(platform ?? subscription.platformId);
   const status = serviceStatusFromDates(subscription.endDate, subscription.status);
   const days = daysRemaining(subscription.endDate);
-  const parsed = parseProfileSlot(subscription.accessProfile);
-  const email = subscription.platformEmail.trim();
-  const password = accountPasswordFromNotes(subscription.notes);
-  const profile = parsed.name || (parsed.slot ? String(parsed.slot) : "");
-  const pin = (subscription.accessPassword ?? "").trim();
-  const fields = [
-    { key: "email", label: "Correo o usuario", value: email, icon: <MailIcon className="h-3.5 w-3.5" />, secret: false },
-    { key: "password", label: "Clave", value: password, icon: <LockIcon className="h-3.5 w-3.5" />, secret: true },
-    { key: "profile", label: "Perfil", value: profile, icon: <UsersIcon className="h-3.5 w-3.5" />, secret: false },
-    { key: "pin", label: "PIN", value: pin, icon: <PinPadIcon className="h-3.5 w-3.5" />, secret: false },
-  ];
+  const fields = credentialFields(subscription).map((field) => ({
+    ...field,
+    icon:
+      field.key === "email" ? (
+        <MailIcon className="h-3.5 w-3.5" />
+      ) : field.key === "password" ? (
+        <LockIcon className="h-3.5 w-3.5" />
+      ) : field.key === "profile" ? (
+        <UsersIcon className="h-3.5 w-3.5" />
+      ) : (
+        <PinPadIcon className="h-3.5 w-3.5" />
+      ),
+  }));
+  const email = fields.find((field) => field.key === "email")?.value ?? "";
 
   return (
     <article
@@ -463,7 +466,101 @@ function codeAgeLabel(at: number) {
   return minutes < 1 ? "recién llegado" : `hace ${minutes} min`;
 }
 
+export type ServiceCredential = {
+  key: "email" | "password" | "profile" | "pin";
+  label: string;
+  value: string;
+  secret: boolean;
+};
+
+/** Clave, PIN y perfil tal como los ve el cliente. La clave de una cuenta asignada vive en las notas. */
+export function credentialFields(
+  subscription: Pick<Subscription, "platformEmail" | "notes" | "accessPassword" | "accessProfile"> & {
+    password?: string;
+  },
+): ServiceCredential[] {
+  const typedPassword = (subscription.password ?? "").trim();
+  const password = typedPassword || accountPasswordFromNotes(subscription.notes);
+  const parsed = parseProfileSlot(subscription.accessProfile);
+  const profile = parsed.name || (parsed.slot ? String(parsed.slot) : "");
+  const pin = (subscription.accessPassword ?? "").trim();
+  return [
+    { key: "email", label: "Correo o usuario", value: subscription.platformEmail.trim(), secret: false },
+    { key: "password", label: "Clave", value: password, secret: true },
+    { key: "profile", label: "Perfil", value: profile, secret: false },
+    { key: "pin", label: "PIN", value: pin, secret: false },
+  ];
+}
+
+export function ServiceAccessFields({
+  subscription,
+}: {
+  subscription: Pick<Subscription, "id" | "platformEmail" | "notes" | "accessPassword" | "accessProfile"> & {
+    password?: string;
+  };
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState(false);
+  const fields = credentialFields(subscription);
+
+  async function copyText(key: string, text: string) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1600);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+      {fields.map((field) => {
+        const copyKey = `${subscription.id}:${field.key}`;
+        const display =
+          field.secret && field.value && !revealed
+            ? "••••••••"
+            : field.value || (field.key === "pin" ? "No tiene" : "—");
+        return (
+          <div key={field.key} className="rounded-xl border border-[#253047] bg-[#0B111C] px-2.5 py-2">
+            <p className="text-[10px] text-[#94A3B8]">{field.label}</p>
+            <div className="mt-1 flex items-center gap-1">
+              <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-white">{display}</p>
+              {field.secret && field.value ? (
+                <button
+                  type="button"
+                  onClick={() => setRevealed((current) => !current)}
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white"
+                  aria-label={revealed ? "Ocultar clave" : "Mostrar clave"}
+                >
+                  {revealed ? <EyeOffIcon className="h-3.5 w-3.5" /> : <EyeIcon className="h-3.5 w-3.5" />}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => copyText(copyKey, field.value)}
+                disabled={!field.value}
+                className="inline-flex h-7 shrink-0 items-center gap-1 rounded-lg border border-white/10 px-1.5 text-[10px] font-medium text-white disabled:opacity-40"
+              >
+                <CopyIcon className="h-3 w-3" />
+                {copied === copyKey ? "Copiado" : "Copiar"}
+              </button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function accountPasswordFromNotes(notes?: string) {
-  const match = /Clave de la cuenta:\s*(.+)/i.exec(notes ?? "");
-  return match?.[1]?.trim() ?? "";
+  const text = notes ?? "";
+  for (const rawLine of text.split(/\r?\n/)) {
+    const match = /^clave de la cuenta:\s*(.*)$/i.exec(rawLine.trim());
+    const value = match?.[1]?.trim();
+    if (value) return value;
+  }
+  const loose = /clave de la cuenta:\s*([^\r\n]+)/i.exec(text);
+  return loose?.[1]?.trim() ?? "";
 }

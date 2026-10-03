@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { ServiceAccessFields } from "@/components/access/CustomerAccessCenter";
 import { Card } from "@/components/ui/Card";
 import { CustomerSquareLogo, customerBrandSurfaceStyle } from "@/components/cliente/CustomerSquareLogo";
 import { ScreenHeader } from "@/components/ui/ScreenHeader";
@@ -31,11 +32,13 @@ export default async function ServiceDetailPage({
   const products = await loadProducts(service.sellerId, true);
   const product = products.find((item) => item.id === service.productId);
   const status = serviceStatusFromDates(service.endDate, service.status);
-  const info = [
-    service.accessProfile ? { label: "Perfil", value: service.accessProfile } : null,
-    service.platformEmail ? { label: "Correo", value: service.platformEmail } : null,
-    product ? { label: "Plan", value: `${product.durationDays} días` } : null,
-  ].filter((item): item is { label: string; value: string } => Boolean(item));
+  const plan =
+    product && product.name !== "Cuenta asignada" && product.durationDays
+      ? `${product.durationDays} días`
+      : null;
+  const info = [plan ? { label: "Plan", value: plan } : null].filter(
+    (item): item is { label: string; value: string } => Boolean(item),
+  );
 
   const declined = service.renewalIntent === "decline";
   const renewing = service.renewalIntent === "renew";
@@ -63,7 +66,9 @@ export default async function ServiceDetailPage({
                 {status === "proximo_a_vencer" ? "Por vencer" : subscriptionStatusLabel[status]}
               </span>
             </div>
-            {product ? <p className="mt-2 text-sm text-white/75">{product.name}</p> : null}
+            {product && product.name !== "Cuenta asignada" ? (
+              <p className="mt-2 text-sm text-white/75">{product.name}</p>
+            ) : null}
             <p className="mt-3 text-sm text-white">Vence {formatDate(service.endDate)}</p>
             <span className="mt-2 inline-flex rounded-full bg-[#F59E0B]/20 px-2.5 py-1 text-xs font-medium text-[#FBBF24]">
               {daysLeftLabel(service.endDate)}
@@ -71,6 +76,8 @@ export default async function ServiceDetailPage({
           </div>
         </div>
       </article>
+
+      <ServiceAccessFields subscription={service} />
 
       {info.length > 0 ? (
         <div>
