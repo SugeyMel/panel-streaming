@@ -351,15 +351,7 @@ function AccessCard({
       <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button
           type="button"
-          onClick={() =>
-            onCopy(
-              `${subscription.id}:all`,
-              fields
-                .filter((field) => field.value)
-                .map((field) => `${field.label}: ${field.value}`)
-                .join("\n"),
-            )
-          }
+          onClick={() => onCopy(`${subscription.id}:all`, credentialClipboardText(fields, title))}
           className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-black/25 text-[12px] font-medium text-[#E2E8F0]"
         >
           <CopyIcon className="h-3.5 w-3.5" />
@@ -492,16 +484,37 @@ export function credentialFields(
   ];
 }
 
+const clipboardLabels: Record<ServiceCredential["key"], string> = {
+  email: "📧 Correo",
+  password: "🔑 Clave",
+  profile: "👤 Perfil",
+  pin: "🔢 PIN",
+};
+
+/** Texto listo para pegar en WhatsApp, con el servicio y las cuatro líneas aunque alguna venga vacía. */
+export function credentialClipboardText(fields: ServiceCredential[], serviceName?: string) {
+  const lines = fields.map((field) => {
+    const value = field.value || (field.key === "pin" ? "No tiene" : "");
+    return `${clipboardLabels[field.key]}: ${value}`;
+  });
+  const name = serviceName?.trim();
+  if (name) lines.unshift(`📺 Servicio: ${name}`);
+  return lines.join("\n");
+}
+
 export function ServiceAccessFields({
   subscription,
+  serviceName,
 }: {
   subscription: Pick<Subscription, "id" | "platformEmail" | "notes" | "accessPassword" | "accessProfile"> & {
     password?: string;
   };
+  serviceName?: string;
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const [revealed, setRevealed] = useState(false);
   const fields = credentialFields(subscription);
+  const allKey = `${subscription.id}:all`;
 
   async function copyText(key: string, text: string) {
     if (!text) return;
@@ -550,6 +563,15 @@ export function ServiceAccessFields({
           </div>
         );
       })}
+      <button
+        type="button"
+        onClick={() => copyText(allKey, credentialClipboardText(fields, serviceName))}
+        disabled={!fields.some((field) => field.value)}
+        className="col-span-2 inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-[#0B111C] text-[12px] font-medium text-[#E2E8F0] disabled:opacity-40 lg:col-span-4"
+      >
+        <CopyIcon className="h-3.5 w-3.5" />
+        {copied === allKey ? "Copiado" : "Copiar todo"}
+      </button>
     </div>
   );
 }

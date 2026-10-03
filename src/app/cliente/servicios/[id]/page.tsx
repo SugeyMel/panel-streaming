@@ -77,7 +77,7 @@ export default async function ServiceDetailPage({
         </div>
       </article>
 
-      <ServiceAccessFields subscription={service} />
+      <ServiceAccessFields subscription={service} serviceName={platform.name} />
 
       {info.length > 0 ? (
         <div>
