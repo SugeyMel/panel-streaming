@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   assignAccountToSellerAction,
@@ -17,6 +17,38 @@ import type { Platform, Seller } from "@/lib/types";
 
 const inputClass =
   "h-11 w-full rounded-xl border border-[#253047] bg-[#070B14] px-3 text-sm text-white outline-none placeholder:text-[#64748B] focus:border-violet-400/50";
+
+function openExpiresAtPicker(event: MouseEvent<HTMLInputElement>) {
+  // iPhone y escritorio abren el selector con el toque o el clic nativo.
+  // Chrome Android recibe el toque en el campo y no abre el diálogo.
+  if (!/Android/i.test(navigator.userAgent)) return;
+  const input = event.currentTarget;
+  if (typeof input.showPicker !== "function") return;
+  event.preventDefault();
+  try {
+    input.showPicker();
+  } catch {
+    // El navegador rechazó el gesto; el icono nativo sigue pudiendo abrirlo.
+  }
+}
+
+function ExpiresAtField({ defaultValue }: { defaultValue?: string }) {
+  const [android, setAndroid] = useState(false);
+  useEffect(() => {
+    setAndroid(/Android/i.test(navigator.userAgent));
+  }, []);
+
+  return (
+    <input
+      name="expiresAt"
+      type="date"
+      aria-label="Fecha de vencimiento"
+      defaultValue={defaultValue}
+      className={`${inputClass} native-date${android ? " native-date-android" : ""}`}
+      onClick={openExpiresAtPicker}
+    />
+  );
+}
 
 export function AdminAccountAssign({
   sellers,
@@ -181,7 +213,7 @@ export function AdminAccountAssign({
               ) : null}
             </>
           ) : null}
-          <input name="expiresAt" type="date" className={inputClass} />
+          <ExpiresAtField />
           <div className="sm:col-span-2">
             <button
               type="submit"
@@ -306,7 +338,7 @@ function EditAssignedForm({ item, onDone }: { item: AdminAssignedAccount; onDone
       <input name="email" required defaultValue={item.email} placeholder="Correo de la cuenta" className={inputClass} />
       <input name="password" defaultValue={item.password} placeholder="Clave de la cuenta" className={inputClass} />
       <input name="label" defaultValue={item.label} placeholder="Nombre del perfil (opcional)" className={inputClass} />
-      <input name="expiresAt" type="date" defaultValue={item.expiresAt ?? ""} className={inputClass} />
+      <ExpiresAtField defaultValue={item.expiresAt ?? ""} />
       {isCustomer ? (
         <>
           <select

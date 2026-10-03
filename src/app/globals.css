@@ -62,6 +62,67 @@ select option {
   border-color: color-mix(in srgb, var(--accent-sky) 55%, var(--border));
 }
 
+/*
+  Fecha de vencimiento en celular.
+  El preflight deja el icono nativo con line-height: 1 y el input usa altura fija
+  (h-11), así que en Chrome Android ese icono queda sin área de toque y el diálogo
+  no abre. En táctil el control recupera altura, appearance nativo y un icono real.
+  En escritorio (puntero fino) no se aplica: el calendario sigue igual.
+*/
+@media (pointer: coarse) {
+  .native-date {
+    position: relative;
+    height: auto;
+    min-height: 2.75rem;
+    font-size: 16px;
+    line-height: 1.25rem;
+    color-scheme: dark;
+    appearance: auto;
+    -webkit-appearance: auto;
+    touch-action: manipulation;
+  }
+
+  .native-date::-webkit-calendar-picker-indicator {
+    position: relative;
+    z-index: 1;
+    display: inline-block;
+    width: 1.5rem;
+    height: 1.5rem;
+    margin: 0;
+    padding: 0;
+    line-height: normal;
+    cursor: pointer;
+    opacity: 1;
+  }
+}
+
+/* Solo Chrome Android: el diálogo no abre al tocar el texto, solo el icono.
+   El icono ocupa todo el campo (transparente) y se dibuja uno visible detrás. */
+.native-date-android {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='1.8'%3E%3Crect x='4' y='5' width='16' height='15' rx='2'/%3E%3Cpath d='M8 3v4M16 3v4M4 10h16'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1.15rem 1.15rem;
+}
+
+.native-date-android::-webkit-date-and-time-value {
+  pointer-events: none;
+}
+
+.native-date-android::-webkit-calendar-picker-indicator {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: normal;
+  cursor: pointer;
+  background: transparent;
+  opacity: 0;
+}
+
 .cta-gradient {
   background: linear-gradient(135deg, #8b5cf6, #3b82f6, #06b6d4);
 }
