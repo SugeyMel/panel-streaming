@@ -32,6 +32,7 @@ export function CustomerAccessCenter({
   sellerId: _sellerId,
   enabledMailboxEmails: _enabledMailboxEmails = [],
   providerWhatsapp = "",
+  lockedServiceIds = [],
 }: {
   services: Subscription[];
   platforms: Platform[];
@@ -40,12 +41,14 @@ export function CustomerAccessCenter({
   enabledMailboxEmails?: string[];
   /** WhatsApp del vendedor (o del administrador) cuando se alcanza el límite. */
   providerWhatsapp?: string;
+  lockedServiceIds?: string[];
 }) {
   const [filter, setFilter] = useState("todos");
   const [copied, setCopied] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, EmailLookupResult>>({});
+  const [lockedIds, setLockedIds] = useState(lockedServiceIds);
 
   const chips = useMemo(() => {
     const counts = new Map<string, { platform: Platform; count: number }>();
@@ -75,6 +78,9 @@ export function CustomerAccessCenter({
     setLoadingId(subscription.id);
     try {
       const next = await lookupAccessCodeAction(subscription.id, { warningAccepted });
+      if (next.requestsLocked) {
+        setLockedIds((current) => (current.includes(subscription.id) ? current : [...current, subscription.id]));
+      }
       setResults((current) => ({ ...current, [subscription.id]: next }));
     } catch {
       setResults((current) => ({
@@ -160,6 +166,7 @@ export function CustomerAccessCenter({
                 revealed={Boolean(revealed[subscription.id])}
                 loading={loadingId === subscription.id}
                 result={results[subscription.id]}
+                locked={lockedIds.includes(subscription.id)}
                 providerWhatsapp={providerWhatsapp}
                 onCopy={copyText}
                 onToggleReveal={() =>
@@ -186,6 +193,9 @@ export function CustomerAccessCenter({
           </ul>
         </div>
       </div>
+      <p className="rounded-2xl border border-[#EF4444]/50 bg-[#450A0A] px-3 py-3 text-[12px] font-semibold leading-snug text-[#FCA5A5] sm:px-4">
+        Si solicitas códigos más de 10 veces sin respuesta, se bloqueará la opción durante 60 minutos.
+      </p>
     </div>
   );
 }
@@ -215,6 +225,7 @@ function AccessCard({
   revealed,
   loading,
   result,
+  locked = false,
   providerWhatsapp = "",
   onCopy,
   onToggleReveal,
@@ -227,6 +238,7 @@ function AccessCard({
   revealed: boolean;
   loading: boolean;
   result?: EmailLookupResult;
+  locked?: boolean;
   providerWhatsapp?: string;
   onCopy: (key: string, text: string) => void;
   onToggleReveal: () => void;
@@ -234,6 +246,7 @@ function AccessCard({
   onResult: (next: EmailLookupResult) => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [lockNotice, setLockNotice] = useState(false);
   const disney = isDisneyPlatform(platform);
   const onResultRef = useRef(onResult);
   onResultRef.current = onResult;
@@ -360,20 +373,32 @@ function AccessCard({
         <button
           type="button"
           onClick={() => {
+            if (locked) {
+              setLockNotice(true);
+              return;
+            }
             if (disney) {
               setConfirming(true);
               return;
             }
             onRequestCode(false);
           }}
-          disabled={loading || !email}
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ background: theme.to }}
+          disabled={!locked && (loading || !email)}
+          className={`inline-flex h-9 items-center justify-center gap-1.5 rounded-xl text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+            locked ? "bg-[#DC2626]" : ""
+          }`}
+          style={locked ? undefined : { background: theme.to }}
         >
-          <KeyIcon className="h-3.5 w-3.5" />
-          {loading ? "Buscando..." : "Solicitar código"}
+          {locked ? <LockIcon className="h-3.5 w-3.5" /> : <KeyIcon className="h-3.5 w-3.5" />}
+          {loading && !locked ? "Buscando..." : "Solicitar código"}
         </button>
       </div>
+
+      {lockNotice ? (
+        <p className="mt-2 rounded-xl border border-[#EF4444] bg-[#450A0A] px-3 py-3 text-center text-[12px] font-bold leading-snug text-[#FECACA]">
+          SE HA BLOQUEADO TU OPCION PARA SOLICITAR MAS CODIGOS VUELVE A INTENTARLO DENTRO DE 60 MINUTOS O COMUNICATE CON TU PROVEEDOR
+        </p>
+      ) : null}
 
       {confirming ? (
         <DisneyCodeWarning

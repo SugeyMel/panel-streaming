@@ -1,4 +1,5 @@
 import { CustomerAccessCenter } from "@/components/access/CustomerAccessCenter";
+import { lockedServiceIds } from "@/lib/code-request-lock";
 import { customerScope, loadConnectedEmails, loadPlatforms, loadSellerById, loadServices } from "@/lib/data/queries";
 import { serviceStatusFromDates } from "@/lib/format";
 import { loadAdminWhatsapp, sellerClientCodesEnabled } from "@/lib/seller-permissions";
@@ -30,6 +31,7 @@ export default async function CustomerAccessPage() {
     loadAdminWhatsapp().catch(() => ""),
   ]);
   const enabledMailboxEmails = mailboxes.filter((item) => item.codesEnabled).map((item) => item.email);
+  const lockedIds = customerId ? await lockedServiceIds(customerId, mine.map((item) => item.id)) : [];
 
   return (
     <CustomerAccessCenter
@@ -39,6 +41,7 @@ export default async function CustomerAccessPage() {
       sellerId={sellerId}
       enabledMailboxEmails={enabledMailboxEmails}
       providerWhatsapp={seller?.whatsapp || adminWhatsapp}
+      lockedServiceIds={lockedIds}
     />
   );
 }

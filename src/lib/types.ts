@@ -382,6 +382,8 @@ export type EmailLookupResult = {
   approvalId?: string;
   safeActionAvailable?: boolean;
   message: string;
+  /** La décima solicitud sin código acaba de bloquear el botón 60 minutos. */
+  requestsLocked?: boolean;
 };
 
 export type EmailAuditLog = {

@@ -55,6 +55,7 @@ import {
   withCodesToken,
 } from "@/lib/email-codes";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { CODE_REQUEST_LOCK_MESSAGE, isServiceCodeLocked } from "@/lib/code-request-lock";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ConnectedEmailAccount, EmailCodeFilterPolicy, EmailLookupResult, EmailLookupType } from "@/lib/types";
 
@@ -570,6 +571,28 @@ async function recentLookupCount(customerId: string, serviceId: string) {
   return data?.length ?? 0;
 }
 
+async function unansweredCode(
+  service: { sellerId: string; id: string; platformId: string },
+  customerId: string,
+  mailboxId: string,
+): Promise<EmailLookupResult> {
+  await recordLookup({
+    sellerId: service.sellerId,
+    customerId,
+    serviceId: service.id,
+    platformId: service.platformId,
+    mailboxId,
+    result: "NOT_FOUND",
+    type: "UNKNOWN_BLOCKED",
+  });
+  return {
+    type: "UNKNOWN_BLOCKED",
+    status: "NOT_FOUND",
+    message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
+    requestsLocked: await isServiceCodeLocked(customerId, service.id),
+  };
+}
+
 export async function lookupAccessCodeAction(
   serviceId: string,
   options?: { warningAccepted?: boolean },
@@ -609,6 +632,15 @@ export async function lookupAccessCodeAction(
       type: "UNKNOWN_BLOCKED",
       status: "DENIED",
       message: "Este servicio está desactivado. Consulta con tu vendedor.",
+    };
+  }
+
+  if (await isServiceCodeLocked(customerId, service.id)) {
+    return {
+      type: "UNKNOWN_BLOCKED",
+      status: "RATE_LIMITED",
+      message: CODE_REQUEST_LOCK_MESSAGE,
+      requestsLocked: true,
     };
   }
 
@@ -734,20 +766,7 @@ export async function lookupAccessCodeAction(
       break;
     }
     if (!allowed) {
-      await recordLookup({
-        sellerId: service.sellerId,
-        customerId,
-        serviceId: service.id,
-        platformId: service.platformId,
-        mailboxId: mailbox.id,
-        result: "NOT_FOUND",
-        type: "UNKNOWN_BLOCKED",
-      });
-      return {
-        type: "UNKNOWN_BLOCKED",
-        status: "NOT_FOUND",
-        message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
-      };
+      return unansweredCode(service, customerId, mailbox.id);
     }
     await recordLookup({
       sellerId: service.sellerId,
@@ -865,39 +884,13 @@ export async function lookupAccessCodeAction(
     }
     const limited = limitDisneyFoundCode(live);
     if (limited.status !== "found") {
-      await recordLookup({
-        sellerId: service.sellerId,
-        customerId,
-        serviceId: service.id,
-        platformId: service.platformId,
-        mailboxId: mailbox.id,
-        result: "NOT_FOUND",
-        type: "UNKNOWN_BLOCKED",
-      });
-      return {
-        type: "UNKNOWN_BLOCKED",
-        status: "NOT_FOUND",
-        message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
-      };
+      return unansweredCode(service, customerId, mailbox.id);
     }
     live = limited;
   }
 
   if (live.status === "not_found") {
-    await recordLookup({
-      sellerId: service.sellerId,
-      customerId,
-      serviceId: service.id,
-      platformId: service.platformId,
-      mailboxId: mailbox.id,
-      result: "NOT_FOUND",
-      type: "UNKNOWN_BLOCKED",
-    });
-    return {
-      type: "UNKNOWN_BLOCKED",
-      status: "NOT_FOUND",
-      message: "No hay un código de acceso reciente. Los mensajes de cambio de correo o contraseña nunca se muestran.",
-    };
+    return unansweredCode(service, customerId, mailbox.id);
   }
 
   if (disney && platform && live.status === "found") {
