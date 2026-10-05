@@ -26,12 +26,18 @@ export function ProductsManager({
   platforms,
   accounts = [],
   offerLinks = [],
+  saveAction = upsertProductAction,
+  showInventory = true,
+  embedded = false,
 }: {
   seller: Seller;
   products: Product[];
   platforms: Platform[];
   accounts?: StreamingAccount[];
   offerLinks?: StoreOfferLink[];
+  saveAction?: (formData: FormData) => Promise<{ ok: boolean; error?: string }>;
+  showInventory?: boolean;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -55,7 +61,7 @@ export function ProductsManager({
   }
 
   return (
-    <div className="-mx-4 -mt-2 sm:-mx-6 lg:-mx-8 lg:-mt-2">
+    <div className={embedded ? "" : "-mx-4 -mt-2 sm:-mx-6 lg:-mx-8 lg:-mt-2"}>
       {message ? <p className="px-4 pt-3 text-sm text-cyan-300">{message}</p> : null}
       <SellerStore
         seller={seller}
@@ -71,7 +77,7 @@ export function ProductsManager({
           key={editing?.id ?? "new"}
           className="space-y-3"
           action={async (formData) => {
-            const result = await upsertProductAction(formData);
+            const result = await saveAction(formData);
             setMessage(result.ok ? "Guardado." : result.error ?? "No se pudo guardar");
             if (result.ok) {
               setOpen(false);
@@ -166,7 +172,8 @@ export function ProductsManager({
             placeholder="Vacío = sin tachado"
             className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2"
           />
-          <input type="hidden" name="syncAccounts" value="1" />
+          {showInventory ? <input type="hidden" name="syncAccounts" value="1" /> : null}
+          {showInventory ? (
           <div>
             <p className="text-xs text-slate-400">Inventario asociado (misma plataforma)</p>
             <p className="mt-1 text-[11px] text-slate-500">No crea cuentas. Solo enlaza las que ya registraste.</p>
@@ -198,6 +205,7 @@ export function ProductsManager({
               )}
             </div>
           </div>
+          ) : null}
           <select name="active" defaultValue={editing?.active === false ? "false" : "true"} className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2">
             <option value="true">Activo</option>
             <option value="false">Inactivo</option>

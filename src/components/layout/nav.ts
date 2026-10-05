@@ -94,6 +94,7 @@ export const adminNav: NavItem[] = [
   { href: "/admin", label: "Inicio", icon: HomeIcon },
   { href: "/admin/vendedores", label: "Vendedores", icon: UsersIcon },
   { href: "/admin/clientes", label: "Clientes", icon: UsersIcon },
+  { href: "/admin/productos", label: "Productos venta directa", icon: ProductsIcon },
   { href: "/admin/pedidos", label: "Pedidos", icon: OrdersIcon },
   { href: "/admin/ventas", label: "Ventas", icon: SalesIcon },
   { href: "/admin/mayorista", label: "Mayorista", icon: InventoryIcon },

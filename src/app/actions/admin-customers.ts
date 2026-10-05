@@ -5,6 +5,7 @@ import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { whatsappParaGuardar } from "@/lib/clientes";
 import { ensureCustomerLogin } from "@/lib/customer-login";
 import { createServiceClient } from "@/lib/supabase/server";
+import { DIRECT_SALES_SLUG } from "@/lib/direct-sales";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 /**
@@ -15,8 +16,6 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
  */
 
 type Result = { ok: true; message?: string } | { ok: false; error: string };
-
-const DIRECT_SALES_SLUG = "venta-directa";
 
 async function adminContext() {
   if (!isSupabaseConfigured()) return { error: "Supabase no está configurado. La acción quedó en modo demo." } as const;
@@ -46,6 +45,15 @@ async function ensureDirectSalesSeller(admin: AdminClient, email: string): Promi
     .maybeSingle();
   if (error || !created?.id) return null;
   return String(created.id);
+}
+
+/** Crea el vendedor interno si todavía no existe, para poder cargar su tienda. */
+export async function prepareDirectSalesSeller(): Promise<{ ok: true; sellerId: string } | { ok: false; error: string }> {
+  const ctx = await adminContext();
+  if ("error" in ctx) return { ok: false, error: ctx.error ?? "No autorizado." };
+  const sellerId = await ensureDirectSalesSeller(ctx.admin, ctx.session.email);
+  if (!sellerId) return { ok: false, error: "No se pudo preparar Venta directa." };
+  return { ok: true, sellerId };
 }
 
 function refresh() {
