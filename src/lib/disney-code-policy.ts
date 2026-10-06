@@ -5,6 +5,7 @@ export const DISNEY_CODE_WARNING =
 
 export const DISNEY_LIMIT_MESSAGE = "Límite alcanzado, comunícate con tu proveedor";
 export const DISNEY_PENDING_MESSAGE = "Esperando aprobación";
+/** Quedó de cuando un aviso de Disney pausaba la cuenta. Ya no se usa: el aviso no bloquea códigos. */
 export const DISNEY_PAUSED_MESSAGE =
   "Esta cuenta está pausada porque Disney avisó un cambio de correo o clave. Solo el administrador puede reactivarla.";
 export const DISNEY_EXPIRED_MESSAGE = "La solicitud se canceló porque no se aprobó en 15 minutos.";

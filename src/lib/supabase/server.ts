@@ -36,5 +36,8 @@ export function createServiceClient() {
   if (!env || !serviceKey) return null;
   return createAdminJsClient(env.url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
+    },
   });
 }

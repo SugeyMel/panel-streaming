@@ -11,9 +11,9 @@ export type AccountChangeAlert = {
 };
 
 /**
- * Devuelve las cuentas Disney que siguen pausadas.
- * El aviso se detecta al entregar un código, en el mismo buzón donde apareció.
- * Solo el administrador puede reactivarlas.
+ * Avisos de Disney de cambio o intento de cambio de clave o correo.
+ * No pausan la cuenta: el código se sigue entregando.
+ * Entendido oculta ese aviso; uno posterior vuelve a mostrarse.
  */
 export async function loadAccountChangeAlerts(): Promise<AccountChangeAlert[]> {
   if (!isSupabaseConfigured()) return [];

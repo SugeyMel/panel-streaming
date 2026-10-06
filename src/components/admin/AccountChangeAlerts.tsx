@@ -1,14 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { resumePausedAccountAction } from "@/app/actions/code-controls";
 import type { AccountChangeAlert } from "@/lib/account-alerts";
 
 const KIND_LABEL: Record<AccountChangeAlert["kind"], string> = {
-  password: "cambio de contraseña",
-  email: "cambio de correo",
-  account: "cambio en la cuenta",
+  password: "cambio o intento de cambio de contraseña",
+  email: "cambio o intento de cambio de correo",
+  account: "cambio o intento de cambio en la cuenta",
 };
 
 function limaTime(ms?: number) {
@@ -22,17 +22,31 @@ function limaTime(ms?: number) {
   }).format(new Date(ms));
 }
 
-/** Alerta en el inicio del administrador: Disney avisó un cambio y la cuenta quedó pausada. */
+/** Aviso en el inicio del administrador. No pausa la cuenta ni corta los códigos. */
 export function AccountChangeAlerts({ alerts }: { alerts: AccountChangeAlert[] }) {
   const router = useRouter();
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  if (!alerts.length) return null;
+  const [hiddenEmails, setHiddenEmails] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    setHiddenEmails((current) => (current.length ? [] : current));
+  }, [alerts]);
+  const visible = alerts.filter((alert) => !hiddenEmails.includes(alert.email.trim().toLowerCase()));
+  if (!visible.length && !error) return null;
 
-  async function resume(email: string) {
+  async function dismiss(email: string) {
     setPendingEmail(email);
+    setError(null);
     try {
-      await resumePausedAccountAction(email);
+      const result = await resumePausedAccountAction(email);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setHiddenEmails((current) => [...current, email.trim().toLowerCase()]);
       router.refresh();
+    } catch {
+      setError("No se pudo cerrar el aviso. Inténtalo de nuevo.");
     } finally {
       setPendingEmail(null);
     }
@@ -40,9 +54,11 @@ export function AccountChangeAlerts({ alerts }: { alerts: AccountChangeAlert[] }
 
   return (
     <section className="mb-3 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-4 py-3">
-      <p className="text-sm font-bold text-amber-200">⚠️ Cuentas de Disney pausadas por cambio de correo o clave</p>
+      <p className="text-sm font-bold text-amber-200">Avisos de Disney: cambio o intento de cambio de clave o correo</p>
+      <p className="mt-1 text-xs text-amber-100/80">Los códigos de estas cuentas se siguen entregando.</p>
+      {error ? <p className="mt-2 text-xs font-medium text-amber-100">{error}</p> : null}
       <ul className="mt-2 space-y-2">
-        {alerts.map((alert) => (
+        {visible.map((alert) => (
           <li key={`${alert.id}-${alert.email}`} className="rounded-xl bg-black/20 px-3 py-2 text-sm text-[#E2E8F0]">
             <p>
               <span className="font-semibold text-white">{alert.email || "Correo desconocido"}</span>
@@ -58,10 +74,10 @@ export function AccountChangeAlerts({ alerts }: { alerts: AccountChangeAlert[] }
             <button
               type="button"
               disabled={pendingEmail === alert.email}
-              onClick={() => resume(alert.email)}
+              onClick={() => dismiss(alert.email)}
               className="mt-2 inline-flex h-8 items-center rounded-lg bg-white px-3 text-xs font-semibold text-[#1C1917] disabled:opacity-50"
             >
-              {pendingEmail === alert.email ? "Reactivando..." : "Reactivar"}
+              {pendingEmail === alert.email ? "Cerrando..." : "Entendido"}
             </button>
           </li>
         ))}

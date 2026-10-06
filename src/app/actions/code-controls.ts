@@ -16,7 +16,8 @@ export async function resumePausedAccountAction(email: string) {
   const session = await getAppSession();
   requireRole(session, ["superadmin"]);
   if (!email.trim()) return { ok: false as const, error: "Falta el correo de la cuenta." };
-  await resumePausedAccount(email);
+  const result = await resumePausedAccount(email);
+  if (!result.ok) return result;
   refresh();
   return { ok: true as const };
 }

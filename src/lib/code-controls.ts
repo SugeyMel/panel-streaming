@@ -5,6 +5,7 @@ import {
 import { createServiceClient } from "@/lib/supabase/server";
 
 const PAUSES_KEY = "codes_paused_accounts";
+const REVIEWED_KEY = "codes_reviewed_changes";
 const APPROVALS_KEY = "codes_pending_approvals";
 
 export type PausedAccount = {
@@ -14,6 +15,13 @@ export type PausedAccount = {
   noticeId: string;
   requesterName: string;
   requesterKind: "vendedor" | "cliente" | "";
+};
+
+/** Aviso de Disney que el administrador ya cerró con Entendido. */
+type ReviewedChange = {
+  email: string;
+  until: number;
+  noticeIds: string[];
 };
 
 export type CodeApprovalStatus = "pending" | "approved" | "rejected" | "expired" | "delivered";
@@ -60,11 +68,12 @@ async function readJson<T>(key: string, fallback: T): Promise<T> {
 
 async function writeJson(key: string, value: unknown) {
   const admin = createServiceClient();
-  if (!admin) return;
-  await admin.from("app_settings").upsert(
+  if (!admin) return { ok: false as const, error: "Sin conexión a la base de datos." };
+  const { error } = await admin.from("app_settings").upsert(
     { key, value: JSON.stringify(value), updated_at: new Date().toISOString() },
     { onConflict: "key" },
   );
+  return error ? { ok: false as const, error: error.message } : { ok: true as const };
 }
 
 function normalizeEmail(email: string) {
@@ -83,23 +92,76 @@ export async function isAccountPaused(email: string) {
   return rows.some((item) => normalizeEmail(item.email) === wanted);
 }
 
-/** Deja la cuenta pausada. Si ya lo estaba, no se pisa el aviso original. */
-export async function pauseAccount(entry: PausedAccount) {
+/**
+ * El aviso ya se mostró si es el mismo mensaje o si llegó antes de que
+ * el administrador pulsara Entendido. Un aviso posterior vuelve a notificarse.
+ */
+export function noticeWasReviewed(
+  review: { until: number; noticeIds: string[] } | undefined,
+  notice: { id?: string; at?: number },
+) {
+  if (!review) return false;
+  if (notice.id && review.noticeIds.includes(notice.id)) return true;
+  return typeof notice.at === "number" && notice.at <= review.until;
+}
+
+async function reviewFor(email: string) {
+  const wanted = normalizeEmail(email);
+  if (!wanted) return undefined;
+  const reviewed = await readJson<ReviewedChange[]>(REVIEWED_KEY, []);
+  if (!Array.isArray(reviewed)) return undefined;
+  return reviewed.find((item) => normalizeEmail(item.email) === wanted);
+}
+
+/** Guarda el aviso para el administrador. No bloquea la entrega de códigos. */
+export async function pauseAccount(entry: PausedAccount): Promise<"paused" | "already" | "skipped"> {
   const email = normalizeEmail(entry.email);
-  if (!email) return;
+  if (!email) return "skipped";
+  const notice = { id: entry.noticeId, at: entry.at };
+  if (noticeWasReviewed(await reviewFor(email), notice)) return "skipped";
   const rows = await listPausedAccounts();
-  if (rows.some((item) => normalizeEmail(item.email) === email)) return;
+  if (rows.some((item) => normalizeEmail(item.email) === email)) return "already";
+  if (noticeWasReviewed(await reviewFor(email), notice)) return "skipped";
   rows.unshift({ ...entry, email });
   await writeJson(PAUSES_KEY, rows.slice(0, 200));
+  return "paused";
 }
 
 export async function resumePausedAccount(email: string) {
   const wanted = normalizeEmail(email);
+  if (!wanted) return { ok: false as const, error: "Falta el correo de la cuenta." };
   const rows = await listPausedAccounts();
-  await writeJson(
+  const removed = rows.filter((item) => normalizeEmail(item.email) === wanted);
+  const reviewed = await readJson<ReviewedChange[]>(REVIEWED_KEY, []);
+  const list = Array.isArray(reviewed) ? reviewed : [];
+  const previous = list.find((item) => normalizeEmail(item.email) === wanted);
+  const noticeIds = [
+    ...new Set([...(previous?.noticeIds ?? []), ...removed.map((item) => item.noticeId).filter(Boolean)]),
+  ];
+  const nextReviewed = list.filter((item) => normalizeEmail(item.email) !== wanted);
+  nextReviewed.unshift({ email: wanted, until: Date.now(), noticeIds });
+  const savedReview = await writeJson(REVIEWED_KEY, nextReviewed.slice(0, 200));
+  if (!savedReview.ok) return savedReview;
+  const savedPauses = await writeJson(
     PAUSES_KEY,
     rows.filter((item) => normalizeEmail(item.email) !== wanted),
   );
+  if (!savedPauses.ok) return savedPauses;
+  return { ok: true as const };
+}
+
+/** El aviso más reciente que todavía no revisó el administrador, o null. */
+export async function pendingChangeNotice<T extends { id: string; to: string; at?: number }>(
+  email: string,
+  notices: T[],
+) {
+  const wanted = normalizeEmail(email);
+  if (!wanted) return null;
+  const review = await reviewFor(wanted);
+  const pending = notices
+    .filter((notice) => normalizeEmail(notice.to) === wanted && !noticeWasReviewed(review, notice))
+    .sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+  return pending[0] ?? null;
 }
 
 export async function countDisneyDeliveries(email: string) {

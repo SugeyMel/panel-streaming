@@ -16,7 +16,6 @@ import {
   DISNEY_CODE_MAX_AGE_MINUTES,
   DISNEY_EXPIRED_MESSAGE,
   DISNEY_LIMIT_MESSAGE,
-  DISNEY_PAUSED_MESSAGE,
   DISNEY_PENDING_MESSAGE,
   DISNEY_REJECTED_MESSAGE,
   isDisneyApprovalPlatform,
@@ -26,10 +25,10 @@ import {
   claimDisneyApproval,
   countDisneyDeliveries,
   disneyHourlyLimitReached,
-  isAccountPaused,
   lastCodeRequester,
   openDisneyApproval,
   pauseAccount,
+  pendingChangeNotice,
 } from "@/lib/code-controls";
 import { deleteOAuthTokens } from "@/lib/email-oauth";
 import {
@@ -61,16 +60,11 @@ import type { ConnectedEmailAccount, EmailCodeFilterPolicy, EmailLookupResult, E
 
 const RATE_LIMIT = { max: 20, windowMinutes: 10 };
 
-function pausedAccountResult(): EmailLookupResult {
-  return { type: "UNKNOWN_BLOCKED", status: "PAUSED", message: DISNEY_PAUSED_MESSAGE };
-}
-
 function hourlyLimitResult(): EmailLookupResult {
   return { type: "UNKNOWN_BLOCKED", status: "RATE_LIMITED", message: DISNEY_LIMIT_MESSAGE };
 }
 
 async function disneyBlocksBeforeRead(email: string): Promise<EmailLookupResult | null> {
-  if (await isAccountPaused(email)) return pausedAccountResult();
   if (disneyHourlyLimitReached(await countDisneyDeliveries(email))) return hourlyLimitResult();
   return null;
 }
@@ -82,20 +76,24 @@ function limitDisneyFoundCode(live: Extract<MailboxReadResult, { status: "found"
   return { ...live, code: history[0].code, link: history[0].link, history };
 }
 
-async function disneyChangePause(mailbox: { id: string }, email: string): Promise<EmailLookupResult | null> {
-  const notices = await findAccountChangeNotices(mailbox).catch(() => []);
-  const notice = notices.find((item) => item.to === email.trim().toLowerCase());
-  if (!notice) return null;
-  const requester = await lastCodeRequester(email);
-  await pauseAccount({
-    email,
-    kind: notice.kind,
-    at: notice.at ?? Date.now(),
-    noticeId: notice.id,
-    requesterName: requester?.name ?? "",
-    requesterKind: requester?.kind ?? "",
-  });
-  return pausedAccountResult();
+/** Anota el aviso de Disney para el administrador. Nunca bloquea el código. */
+async function noteDisneyAccountChange(mailbox: { id: string }, email: string) {
+  try {
+    const notices = await findAccountChangeNotices(mailbox).catch(() => []);
+    const notice = await pendingChangeNotice(email, notices);
+    if (!notice) return;
+    const requester = await lastCodeRequester(email);
+    await pauseAccount({
+      email,
+      kind: notice.kind,
+      at: notice.at ?? Date.now(),
+      noticeId: notice.id,
+      requesterName: requester?.name ?? "",
+      requesterKind: requester?.kind ?? "",
+    });
+  } catch {
+    /* Un fallo al guardar el aviso no impide entregar el código. */
+  }
 }
 
 async function disneyApprovalOrCode(input: {
@@ -869,19 +867,7 @@ export async function lookupAccessCodeAction(
   }
 
   if (disney && live.status === "found") {
-    const changed = await disneyChangePause(sourceMailbox, serviceEmail);
-    if (changed) {
-      await recordLookup({
-        sellerId: service.sellerId,
-        customerId,
-        serviceId: service.id,
-        platformId: service.platformId,
-        mailboxId: sourceMailbox.id,
-        result: "PAUSED",
-        type: "LOGIN_CODE",
-      });
-      return changed;
-    }
+    await noteDisneyAccountChange(sourceMailbox, serviceEmail);
     const limited = limitDisneyFoundCode(live);
     if (limited.status !== "found") {
       return unansweredCode(service, customerId, mailbox.id);
@@ -1127,8 +1113,7 @@ async function sellerLookupCodeInner(
     return blocked("DENIED", "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos.");
   }
   if (disney && result.status === "found" && sourceMailbox) {
-    const changed = await disneyChangePause(sourceMailbox, email);
-    if (changed) return changed;
+    await noteDisneyAccountChange(sourceMailbox, email);
     const limited = limitDisneyFoundCode(result);
     if (limited.status !== "found") return notFound;
     result = limited;
