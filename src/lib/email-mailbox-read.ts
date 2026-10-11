@@ -7,7 +7,7 @@ import {
   htmlToText,
   type ClassifiableMessage,
 } from "@/lib/email-code-filter";
-import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/lib/email-oauth";
+import { getValidAccessToken, touchMailboxSync } from "@/lib/email-oauth";
 import type { EmailCodeFilterPolicy, EmailLookupType, Platform } from "@/lib/types";
 
 export type MailboxReadResult =
@@ -86,12 +86,12 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (response.status === 401 || response.status === 403) return { unauthorized: true as const };
+  if (response.status === 401) return { unauthorized: true as const };
   if (!response.ok) return { message: null };
   return { message: (await response.json()) as GmailMessage };
 }
 
-async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized" | "error"> {
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("maxResults", "25");
   // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
@@ -117,7 +117,8 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (listRes.status === 401 || listRes.status === 403) return "unauthorized";
+  if (listRes.status === 401) return "unauthorized";
+  if (!listRes.ok) return "error";
   const list = (await listRes.json()) as GmailList;
   if (!listRes.ok) return [];
   let messages = list.messages ?? [];
@@ -131,7 +132,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
     });
-    if (fallbackRes.status === 401 || fallbackRes.status === 403) return "unauthorized";
+    if (fallbackRes.status === 401) return "unauthorized";
     if (fallbackRes.ok) {
       const fallback = (await fallbackRes.json()) as GmailList;
       messages = fallback.messages ?? [];
@@ -178,7 +179,7 @@ async function microsoftFullText(accessToken: string, id: string) {
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (response.status === 401 || response.status === 403) return { unauthorized: true as const, text: "", raw: "" };
+  if (response.status === 401) return { unauthorized: true as const, text: "", raw: "" };
   if (!response.ok) return { unauthorized: false as const, text: "", raw: "" };
   const json = (await response.json()) as { body?: { contentType?: string; content?: string } };
   const raw = json.body?.content ?? "";
@@ -186,7 +187,7 @@ async function microsoftFullText(accessToken: string, id: string) {
   return { unauthorized: false as const, text: text.slice(0, 8000), raw };
 }
 
-async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized"> {
+async function readMicrosoft(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized" | "error"> {
   const since = Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000;
   const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
   url.searchParams.set("$top", "25");
@@ -196,9 +197,9 @@ async function readMicrosoft(accessToken: string, recipient?: string): Promise<C
     headers: { Authorization: `Bearer ${accessToken}` },
     cache: "no-store",
   });
-  if (response.status === 401 || response.status === 403) return "unauthorized";
+  if (response.status === 401) return "unauthorized";
+  if (!response.ok) return "error";
   const json = (await response.json()) as GraphList;
-  if (!response.ok) return [];
   return (json.value ?? [])
     .filter((item) => {
       if (recipient) {
@@ -228,20 +229,35 @@ export async function readFilteredAccessCode(
   platform?: Pick<Platform, "slug" | "name"> | null,
   recipient?: string,
 ): Promise<MailboxReadResult> {
-  const access = await getValidAccessToken(mailbox.id);
+  let access = await getValidAccessToken(mailbox.id);
   if (!access.ok) {
     if (access.reason === "not_connected") return { status: "not_connected" };
+    if (access.reason === "temporary") {
+      return { status: "error", message: "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos." };
+    }
     return { status: "reconnect" };
   }
 
-  const raw =
+  let raw =
     access.token.provider === "google"
       ? await readGmail(access.token.accessToken, recipient)
       : await readMicrosoft(access.token.accessToken, recipient);
 
   if (raw === "unauthorized") {
-    await markMailboxReconnect(mailbox.id, mailbox.sellerId);
-    return { status: "reconnect" };
+    access = await getValidAccessToken(mailbox.id, { forceRefresh: true });
+    if (!access.ok) {
+      if (access.reason === "temporary") {
+        return { status: "error", message: "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos." };
+      }
+      return access.reason === "not_connected" ? { status: "not_connected" } : { status: "reconnect" };
+    }
+    raw =
+      access.token.provider === "google"
+        ? await readGmail(access.token.accessToken, recipient)
+        : await readMicrosoft(access.token.accessToken, recipient);
+  }
+  if (raw === "unauthorized" || raw === "error") {
+    return { status: "error", message: "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos." };
   }
 
   await touchMailboxSync(mailbox.id, mailbox.sellerId);
@@ -260,10 +276,7 @@ export async function readFilteredAccessCode(
         access.token.provider === "google"
           ? await gmailFullText(access.token.accessToken, message.id)
           : await microsoftFullText(access.token.accessToken, message.id);
-      if (full.unauthorized) {
-        await markMailboxReconnect(mailbox.id, mailbox.sellerId);
-        return { status: "reconnect" };
-      }
+      if (full.unauthorized) continue;
       const link = extractNetflixActionLink(full.raw, verdict.category === "travel_link" ? "travel" : "household");
       if (!link || history.some((item) => item.link === link)) continue;
       if (!firstType) firstType = verdict.type;
@@ -279,10 +292,7 @@ export async function readFilteredAccessCode(
         access.token.provider === "google"
           ? await gmailFullText(access.token.accessToken, maybeId)
           : await microsoftFullText(access.token.accessToken, maybeId);
-      if (full.unauthorized) {
-        await markMailboxReconnect(mailbox.id, mailbox.sellerId);
-        return { status: "reconnect" };
-      }
+      if (full.unauthorized) continue;
       code = pickCode(full.text);
     }
     if (!code) continue;

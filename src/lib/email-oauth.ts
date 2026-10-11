@@ -235,11 +235,16 @@ export async function loadOAuthToken(connectedEmailId: string): Promise<StoredOA
   };
 }
 
-export async function getValidAccessToken(connectedEmailId: string) {
+function refreshWasRevoked(error?: string) {
+  return error === "invalid_grant" || error === "invalid_client" || error === "unauthorized_client";
+}
+
+export async function getValidAccessToken(connectedEmailId: string, options?: { forceRefresh?: boolean }) {
   const stored = await loadOAuthToken(connectedEmailId);
   if (!stored) return { ok: false as const, reason: "not_connected" as const };
   const expires = Date.parse(stored.expiresAt);
-  if (Number.isFinite(expires) && expires - 30_000 > Date.now() && stored.accessToken) {
+  const stillValid = Number.isFinite(expires) && expires - 30_000 > Date.now() && Boolean(stored.accessToken);
+  if (stillValid && !options?.forceRefresh) {
     return { ok: true as const, token: stored };
   }
   if (!stored.refreshToken) {
@@ -249,8 +254,12 @@ export async function getValidAccessToken(connectedEmailId: string) {
   const refreshed =
     stored.provider === "google" ? await googleRefresh(stored.refreshToken) : await microsoftRefresh(stored.refreshToken);
   if (!refreshed.access_token) {
-    await markMailboxReconnect(stored.connectedEmailId, stored.sellerId);
-    return { ok: false as const, reason: "reconnect" as const };
+    // Un corte de Google no desconecta el buzón. Solo si el permiso fue revocado.
+    if (refreshWasRevoked(refreshed.error)) {
+      await markMailboxReconnect(stored.connectedEmailId, stored.sellerId);
+      return { ok: false as const, reason: "reconnect" as const };
+    }
+    return { ok: false as const, reason: "temporary" as const };
   }
   const next: StoredOAuthToken = {
     ...stored,
