@@ -50,4 +50,11 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
 ].join(" ");
 
+export const GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
+/** true si Google concedió permiso para leer el correo (no solo ver la dirección). */
+export function hasGmailReadScope(scope?: string | null) {
+  return (scope ?? "").split(/\s+/).includes(GMAIL_READ_SCOPE);
+}
+
 export const MICROSOFT_SCOPES = ["offline_access", "User.Read", "Mail.Read"].join(" ");

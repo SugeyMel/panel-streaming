@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAppSession, requireRole } from "@/lib/auth/get-session";
 import { exchangeOAuthCode, oauthAccountEmail, saveOAuthTokens } from "@/lib/email-oauth";
-import { isOAuthProvider, siteUrl } from "@/lib/email-oauth-config";
+import { hasGmailReadScope, isOAuthProvider, siteUrl } from "@/lib/email-oauth-config";
 import { verifyOAuthState } from "@/lib/email-oauth-crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 
@@ -59,6 +59,11 @@ export async function GET(request: NextRequest, context: { params: Promise<{ pro
     if (googleCode === "invalid_client") return finish(returnTo, "cliente");
     if (googleCode === "invalid_grant") return finish(returnTo, "code");
     return finish(returnTo, "token");
+  }
+
+  // Google deja desmarcar "leer tus correos". Sin ese permiso el buzón no sirve: no se guarda como conectado.
+  if (provider === "google" && !hasGmailReadScope(exchanged.tokens.scope)) {
+    return finish(returnTo, "permiso_gmail");
   }
 
   const refreshToken = exchanged.tokens.refresh_token;

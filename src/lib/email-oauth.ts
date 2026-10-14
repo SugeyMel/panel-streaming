@@ -1,6 +1,7 @@
 import {
   GOOGLE_SCOPES,
   googleOAuthEnv,
+  hasGmailReadScope,
   isOAuthProvider,
   MICROSOFT_SCOPES,
   microsoftOAuthEnv,
@@ -196,10 +197,12 @@ export async function saveOAuthTokens(input: {
   };
   const { error } = await supabase.from("email_oauth_tokens").upsert(payload, { onConflict: "connected_email_id" });
   if (error) return { ok: false as const, error: error.message };
+  // Si Google solo dio permiso de ver la dirección (sin leer correo), el buzón queda "requiere reconexión".
+  const missingRead = input.provider === "google" && Boolean(input.scope) && !hasGmailReadScope(input.scope);
   const mailboxUpdate = supabase
     .from("connected_emails")
     .update({
-      status: "conectado",
+      status: missingRead ? "requiere_reconexion" : "conectado",
       oauth_email: input.oauthEmail,
       last_sync_at: new Date().toISOString(),
       provider: input.provider,

@@ -13,6 +13,10 @@ export const OAUTH_RESULT_COPY: Record<string, { ok: boolean; text: string }> = 
     ok: false,
     text: "Google/Microsoft no envió el permiso de larga duración. Vuelve a conectar y acepta todos los permisos.",
   },
+  permiso_gmail: {
+    ok: false,
+    text: "Falta el permiso para leer el correo. Pulsa Reconectar y, en la pantalla de Google, marca la casilla para ver tus mensajes de correo.",
+  },
   guardar: { ok: false, text: "No se pudieron guardar los tokens. Revisa SUPABASE_SERVICE_ROLE_KEY." },
   sql: { ok: false, text: "Falta ejecutar el SQL 0028 en Supabase (tabla de tokens OAuth)." },
   faltan_claves: { ok: false, text: "Faltan las claves OAuth en .env.local. Añádelas y reinicia next dev." },

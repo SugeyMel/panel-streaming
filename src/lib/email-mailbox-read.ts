@@ -7,7 +7,7 @@ import {
   htmlToText,
   type ClassifiableMessage,
 } from "@/lib/email-code-filter";
-import { getValidAccessToken, touchMailboxSync } from "@/lib/email-oauth";
+import { getValidAccessToken, markMailboxReconnect, touchMailboxSync } from "@/lib/email-oauth";
 import type { EmailCodeFilterPolicy, EmailLookupType, Platform } from "@/lib/types";
 
 export type MailboxReadResult =
@@ -91,7 +91,17 @@ async function gmailMessage(accessToken: string, id: string, format: "metadata" 
   return { message: (await response.json()) as GmailMessage };
 }
 
-async function readGmail(accessToken: string, recipient?: string): Promise<ClassifiableMessage[] | "unauthorized" | "error"> {
+/** 403 de Gmail que significa "este permiso no incluye leer correo". Un 403 por límite de uso NO cuenta. */
+async function isGmailScopeMissing(response: Response) {
+  if (response.status !== 403) return false;
+  const body = await response.text().catch(() => "");
+  return /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions|insufficient authentication scopes/i.test(body);
+}
+
+async function readGmail(
+  accessToken: string,
+  recipient?: string,
+): Promise<ClassifiableMessage[] | "unauthorized" | "missing_scope" | "error"> {
   const listUrl = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   listUrl.searchParams.set("maxResults", "25");
   // Con recipient solo se leen mensajes enviados a esa dirección exacta (variantes +1, +2 o dominios reenviados).
@@ -118,6 +128,7 @@ async function readGmail(accessToken: string, recipient?: string): Promise<Class
     cache: "no-store",
   });
   if (listRes.status === 401) return "unauthorized";
+  if (await isGmailScopeMissing(listRes)) return "missing_scope";
   if (!listRes.ok) return "error";
   const list = (await listRes.json()) as GmailList;
   if (!listRes.ok) return [];
@@ -255,6 +266,11 @@ export async function readFilteredAccessCode(
       access.token.provider === "google"
         ? await readGmail(access.token.accessToken, recipient)
         : await readMicrosoft(access.token.accessToken, recipient);
+  }
+  if (raw === "missing_scope") {
+    // Falta el permiso de leer correo: solo se arregla reconectando y aceptando ese permiso.
+    await markMailboxReconnect(mailbox.id, mailbox.sellerId);
+    return { status: "reconnect" };
   }
   if (raw === "unauthorized" || raw === "error") {
     return { status: "error", message: "No se pudo leer el buzón ahora. Inténtalo de nuevo en unos minutos." };

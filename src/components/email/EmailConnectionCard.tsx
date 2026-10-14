@@ -77,8 +77,8 @@ export function EmailConnectionCard({
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const linked = platforms.filter((item) => account.linkedPlatformIds.includes(item.id));
-  const connected = account.status === "conectado" || Boolean(account.oauthEmail);
   const needsReconnect = account.status === "requiere_reconexion";
+  const connected = !needsReconnect && (account.status === "conectado" || Boolean(account.oauthEmail));
   const providerReady = account.provider === "google" ? oauthConfigured.google : oauthConfigured.microsoft;
   const connectHref = oauthStartPath(account.provider, account.id, returnTo);
   const connectLabel = needsReconnect
