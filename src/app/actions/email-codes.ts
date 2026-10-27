@@ -710,13 +710,13 @@ export async function lookupAccessCodeAction(
       item.codesEnabled &&
       (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(service.platformId)),
   );
-  // Igual que en el panel del vendedor: correo exacto, variante con "+" o dominio propio reenviado.
-  const directMailbox = usableMailboxes.find(
-    (item) =>
-      mailboxMatchesService(item.email, serviceEmail) ||
-      mailboxMatchesService(item.email, baseMailboxEmail(serviceEmail)),
+  // Reenviados (Outlook/Hotmail/dominio propio): se usan los Gmail conectados del vendedor (o generales)
+  // con códigos activos, sin filtrar por plataforma, porque el reenvío llega igual para todas.
+  const forwardMailboxes = allMailboxes.filter(
+    (item) => (!item.sellerId || item.sellerId === service.sellerId) && item.codesEnabled,
   );
-  const candidates = directMailbox ? [directMailbox] : isCustomDomainEmail(serviceEmail) ? usableMailboxes : [];
+  // Igual que en el panel del vendedor: Gmail en su buzón; Outlook, Hotmail y dominios propios en los Gmail conectados.
+  const candidates = mailboxesForLookup(serviceEmail, usableMailboxes, forwardMailboxes);
   const mailbox = candidates[0];
 
   if (!service.platformEmail.trim() || !mailbox) {
@@ -1039,12 +1039,11 @@ async function sellerLookupCodeInner(
     (item) =>
       item.codesEnabled && (item.linkedPlatformIds.length === 0 || item.linkedPlatformIds.includes(platformId)),
   );
-  const direct = usable.find(
-    (item) => mailboxMatchesService(item.email, email) || mailboxMatchesService(item.email, baseMailboxEmail(email)),
-  );
-  // Correo de dominio propio reenviado a un Gmail (ej. cuenta@kitiga.com → bernito@gmail.com):
-  // se prueban los buzones conectados y se filtra por la dirección exacta, así nunca se mezclan cuentas.
-  const candidates = direct ? [direct] : isCustomDomainEmail(email) ? usable : [];
+  // Reenviados (Outlook/Hotmail/dominio propio): el buzón que los recibe sirve para todas las
+  // plataformas, así que no se filtra por plataforma, solo que tenga los códigos activos.
+  const forwardPool = mailboxes.filter((item) => item.codesEnabled);
+  // Gmail en su buzón. Lo demás (Outlook, Hotmail, dominio propio) se busca en los Gmail conectados, por la dirección exacta.
+  const candidates = mailboxesForLookup(email, usable, forwardPool);
   if (candidates.length === 0) {
     return blocked("DENIED", "Esta cuenta aún no tiene un buzón de códigos enlazado. Avisa al administrador.");
   }
@@ -1152,15 +1151,36 @@ async function sellerLookupCodeInner(
   };
 }
 
-/** ¿Es un correo de dominio propio (no Gmail/Outlook/Yahoo…)? Esos suelen ser reenvíos hacia un Gmail. */
+/**
+ * ¿Es un correo que no es Gmail? (dominio propio, Outlook, Hotmail, Live, Yahoo…)
+ * Esos se reenvían hacia algún Gmail conectado, así que se buscan ahí filtrando por la dirección exacta.
+ */
 function isCustomDomainEmail(email: string) {
   const value = email.trim().toLowerCase();
   const at = value.lastIndexOf("@");
   if (at < 1) return false;
   const domain = value.slice(at + 1);
-  return !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
-    domain,
+  return !["gmail.com", "googlemail.com"].includes(domain);
+}
+
+/**
+ * Gmail se lee en su propio buzón. Un Outlook/Hotmail registrado pero sin conectar
+ * no tapa el reenvío: se buscan los buzones que sí están conectados.
+ * Para correos reenviados (Outlook/Hotmail/dominio propio) el buzón que los recibe sirve para
+ * TODAS las plataformas, así que la búsqueda usa `forwardPool` (Gmail conectados con códigos
+ * activos, SIN filtrar por plataforma) en lugar de los buzones ya acotados a la plataforma.
+ */
+function mailboxesForLookup<T extends { email: string; status: string }>(
+  email: string,
+  usable: T[],
+  forwardPool?: T[],
+): T[] {
+  const direct = usable.find(
+    (item) => mailboxMatchesService(item.email, email) || mailboxMatchesService(item.email, baseMailboxEmail(email)),
   );
+  if (direct && (!isCustomDomainEmail(email) || direct.status === "conectado")) return [direct];
+  if (!isCustomDomainEmail(email)) return [];
+  return (forwardPool ?? usable).filter((item) => item.status === "conectado");
 }
 
 /** nombre+3@gmail.com → nombre@gmail.com (solo Gmail/Outlook, donde el "+" llega al mismo buzón). */

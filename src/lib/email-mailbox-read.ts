@@ -110,12 +110,9 @@ async function readGmail(
   const afterEpoch = Math.floor((Date.now() - CODE_MAX_AGE_MINUTES * 60 * 1000) / 1000);
   const at = safeRecipient?.lastIndexOf("@") ?? -1;
   const domain = safeRecipient && at > 0 ? safeRecipient.slice(at + 1).toLowerCase() : "";
-  const forwardedDomain =
-    domain.length > 0 &&
-    !["gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com"].includes(
-      domain,
-    );
-  // En un reenvío de dominio propio (kitiga.com → Gmail) el operador to: no indexa la dirección original.
+  // Todo lo que no es Gmail llega reenviado (dominio propio, Outlook, Hotmail…).
+  const forwardedDomain = domain.length > 0 && !["gmail.com", "googlemail.com"].includes(domain);
+  // En un reenvío (kitiga.com u outlook.com → Gmail) el operador to: no siempre indexa la dirección original.
   // La frase entre comillas sí la encuentra en cabeceras y en el cuerpo.
   const query = !safeRecipient
     ? `after:${afterEpoch}`
